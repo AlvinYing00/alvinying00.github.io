@@ -2,7 +2,7 @@
 const chart = LightweightCharts.createChart(document.getElementById('chart'), {
   width: 900,
   height: 450,
-  layout: { backgroundColor: '#ffffff', textColor: '#333' },
+  layout: { backgroundColor: '#000000', textColor: '#333' },
   grid: { vertLines: { color: '#eee' }, horzLines: { color: '#eee' } },
 });
 const candleSeries = chart.addCandlestickSeries();
@@ -71,66 +71,62 @@ function triggerRetracement(prevPrice, movedPrice) {
 }
 
 // ---- Auto market generator ----
+let retraceTarget = null;
+let retraceSteps = 0;
+
 function generateCandle() {
   time++;
   const lastPrice = data[data.length - 1].close;
+
   let newClose;
 
-  if (retraceTarget !== null && retraceStepsRemaining > 0) {
-    // ---- Retracement mode: move smoothly toward retraceTarget ----
-    // Compute linear step and add a little small noise (kept small)
-    const step = (retraceTarget - lastPrice) / retraceStepsRemaining;
-    const noiseBound = Math.min(Math.abs(step) * 0.25, 0.005); // noise <= 0.005 or 25% of step
-    const noise = (Math.random() - 0.5) * 2 * noiseBound;
-    newClose = lastPrice + step + noise;
-    retraceStepsRemaining--;
+  if (retraceTarget !== null && retraceSteps > 0) {
+    // ---- In retracement mode ----
+    const stepSize = (retraceTarget - lastPrice) / retraceSteps;
 
-    if (retraceStepsRemaining <= 0) {
-      // finish retrace (tiny final snap to target if very close)
-      newClose = retraceTarget;
-      retraceTarget = null;
-      retraceStepsRemaining = 0;
+    // Smooth move back toward retrace target with small noise
+    newClose = lastPrice + stepSize + (Math.random() - 0.5) * 0.002;
+    retraceSteps--;
+
+    if (retraceSteps <= 0) {
+      retraceTarget = null; // retracement done
     }
   } else {
-    // ---- Normal (volatile) mode ----
-    // Use a stronger volatility but keep values safe
-    const drift = (Math.random() - 0.5) * 0.12; // typical ±0.06 (adjust to taste)
+    // ---- Normal volatility ----
+    const drift = (Math.random() - 0.5) * 0.1; // bigger swings
     newClose = Math.max(0.00001, lastPrice + drift);
+
+    // Detect big pump/dump -> trigger retracement
+    if (Math.abs(drift) > 0.1) {
+      // Retrace back 60–70% toward the last price
+      const retraceAmount = drift * (Math.random() * 0.1 + 0.6); // 60–70%
+      retraceTarget = lastPrice + retraceAmount;
+
+      // Retrace takes at least 20 candles, up to 40
+      retraceSteps = Math.floor(Math.random() * 20) + 20;
+
+      console.log(
+        `Retracement triggered: target=${retraceTarget.toFixed(
+          5
+        )}, steps=${retraceSteps}`
+      );
+    }
   }
 
-  // Build valid high/low so chart library never errors
   const open = lastPrice;
-  const baseSpike = Math.max(Math.abs(newClose - lastPrice) * 0.6, 0.003); // taller when move is large
-  let high = Math.max(open, newClose) + Math.random() * baseSpike;
-  let low  = Math.min(open, newClose) - Math.random() * baseSpike;
-
-  // Safety corrections
-  high = Math.max(high, open, newClose);
-  low  = Math.min(low, open, newClose);
-  low  = Math.max(low, 0.00001); // never go to zero or negative
+  const high = Math.max(open, newClose) + Math.random() * 0.02;
+  const low = Math.min(open, newClose) - Math.random() * 0.02;
 
   const newCandle = {
     time: time,
     open: open,
-    high: high,
-    low: low,
+    high: Math.max(high, open, newClose),
+    low: Math.min(low, open, newClose),
     close: newClose,
   };
 
-  // Push candle
   data.push(newCandle);
-
-  // If this candle was a "big move" (and not already in retrace), schedule retrace for next ticks
-  const moveAmount = newClose - open;
-  if (!retraceTarget && Math.abs(moveAmount) >= RETRACE_THRESHOLD) {
-    // Trigger retrace based on this big candle
-    triggerRetracement(open, newClose);
-  }
-
-  // Keep memory light
-  if (data.length > 500) data.shift();
-
-  // Render + update display
+  if (data.length > 500) data.shift(); // keep history light
   candleSeries.setData(data);
   updatePriceDisplay();
 }
