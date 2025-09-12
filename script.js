@@ -22,10 +22,10 @@ let marketInterval = null;
 function initChart() {
     let firstCandle = {
         time: ++time,
-        open: 1.2000,
-        high: 1.2010,
-        low: 1.1990,
-        close: 1.2005,
+        open: 100,
+        high: 102,
+        low: 98,
+        close: 100,
     };
     data.push(firstCandle);
     candleSeries.setData(data);
@@ -41,27 +41,33 @@ function generateCandle() {
     let newCandle = {
         time: time,
         open: lastPrice,
-        high: lastPrice + (direction === "up" ? Math.random() * 0.002 : Math.random() * 0.001),
-        low: lastPrice - (direction === "up" ? Math.random() * 0.001 : Math.random() * 0.002),
-        close: lastPrice + (direction === "up" ? Math.random() * 0.0015 : -Math.random() * 0.0015),
+        high: lastPrice + (direction === "up" ? Math.random() * 2 : Math.random() * 1),
+        low: lastPrice - (direction === "up" ? Math.random() * 1 : Math.random() * 2),
+        close: Math.max(0, lastPrice + (direction === "up" ? Math.random() * 1.5 : -Math.random() * 1.5)),
     };
 
     data.push(newCandle);
     candleSeries.setData(data);
 }
 
-// Pump chart to target price
+// Pump chart (add value to current price)
 function pump() {
-    const price = parseFloat(document.getElementById("priceInput").value);
-    if (isNaN(price)) return alert("Enter a valid price!");
-    addCustomCandle(price);
+    const value = parseFloat(document.getElementById("priceInput").value);
+    if (isNaN(value)) return alert("Enter a valid number!");
+
+    let lastPrice = data[data.length - 1].close;
+    let targetPrice = lastPrice + value; // add instead of set
+    addCustomCandle(targetPrice);
 }
 
-// Dump chart to target price
+// Dump chart (subtract value from current price)
 function dump() {
-    const price = parseFloat(document.getElementById("priceInput").value);
-    if (isNaN(price)) return alert("Enter a valid price!");
-    addCustomCandle(price);
+    const value = parseFloat(document.getElementById("priceInput").value);
+    if (isNaN(value)) return alert("Enter a valid number!");
+
+    let lastPrice = data[data.length - 1].close;
+    let targetPrice = Math.max(0, lastPrice - value); // prevent negative
+    addCustomCandle(targetPrice);
 }
 
 // Add manual candle
