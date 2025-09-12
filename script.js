@@ -2,7 +2,7 @@
 const chart = LightweightCharts.createChart(document.getElementById('chart'), {
   width: 900,
   height: 450,
-  layout: { backgroundColor: '#ffffff', textColor: '#000' },
+  layout: { backgroundColor: '#000000', textColor: '#DDD' },
   grid: { 
     vertLines: { color: 'transparent' }, 
     horzLines: { color: 'transparent' } 
