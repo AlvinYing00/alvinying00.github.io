@@ -19,9 +19,9 @@ const RETRACE_MIN_FRAC = 0.60;   // 60%
 const RETRACE_MAX_FRAC = 0.70;   // 70%
 
 let retraceTarget = null;
-let retraceSteps = 0; // how many candles left in retracement
+let retraceSteps = 0; // candles left in retracement
 
-// Format helper (5 decimal places for forex-like look)
+// ---- Format helper ----
 function fmt(num) {
   return Number(num).toFixed(5);
 }
@@ -43,26 +43,26 @@ function initChart() {
 initChart();
 
 function updatePriceDisplay() {
+  if (!data.length) return;
   const last = data[data.length - 1].close;
   priceDisplay.textContent = 'Current: ' + fmt(last);
 }
 
-// ---- Utility: trigger retracement after a big move ----
+// ---- Utility: trigger retracement ----
 function triggerRetracement(prevPrice, movedPrice) {
   const delta = movedPrice - prevPrice;
-  if (Math.abs(delta) < RETRACE_THRESHOLD) return; // not big enough
+  if (Math.abs(delta) < RETRACE_THRESHOLD) return;
 
   const frac = RETRACE_MIN_FRAC + Math.random() * (RETRACE_MAX_FRAC - RETRACE_MIN_FRAC);
   retraceTarget = movedPrice - delta * frac;
   retraceTarget = Math.max(0.00001, retraceTarget);
 
-  // retrace takes at least 20 candles, up to 40
-  retraceSteps = Math.floor(Math.random() * 20) + 20;
+  retraceSteps = Math.floor(Math.random() * 20) + 20; // 20–40 candles
 
   console.log('Retrace TRIGGERED:', {
-    prevPrice: prevPrice,
-    movedPrice: movedPrice,
-    delta: delta,
+    prevPrice,
+    movedPrice,
+    delta,
     frac: Number(frac.toFixed(3)),
     target: Number(retraceTarget.toFixed(5)),
     steps: retraceSteps,
@@ -76,55 +76,55 @@ function generateCandle() {
   let newClose;
 
   if (retraceTarget !== null && retraceSteps > 0) {
-  // ---- In retracement mode ----
-  const stepSize = (retraceTarget - lastPrice) / retraceSteps;
+    // ---- Retracement mode ----
+    const stepSize = (retraceTarget - lastPrice) / retraceSteps;
 
-  // Add randomness so it zig-zags but still trends
-  const noise = (Math.random() - 0.5) * stepSize * 2; 
-  newClose = lastPrice + stepSize + noise;
+    // Zig-zag movement
+    const noise = (Math.random() - 0.5) * stepSize * 2;
+    newClose = lastPrice + stepSize + noise;
 
-  retraceSteps--;
+    retraceSteps--;
 
-  // Clamp to avoid overshooting too wildly
-  if ((stepSize > 0 && newClose > retraceTarget) ||
-      (stepSize < 0 && newClose < retraceTarget)) {
-    newClose = retraceTarget;
+    // Clamp overshoot
+    if ((stepSize > 0 && newClose > retraceTarget) ||
+        (stepSize < 0 && newClose < retraceTarget)) {
+      newClose = retraceTarget;
+    }
+
+    if (retraceSteps <= 0) retraceTarget = null;
+  } else {
+    // ---- Normal volatility ----
+    const drift = (Math.random() - 0.5) * 0.1;
+    newClose = Math.max(0.00001, lastPrice + drift);
+
+    if (Math.abs(drift) >= RETRACE_THRESHOLD) {
+      triggerRetracement(lastPrice, newClose);
+    }
   }
-
-  if (retraceSteps <= 0) retraceTarget = null; // done retracing
-} else {
-  // ---- Normal volatility ----
-  const drift = (Math.random() - 0.5) * 0.1;
-  newClose = Math.max(0.00001, lastPrice + drift);
-
-  if (Math.abs(drift) >= RETRACE_THRESHOLD) {
-    triggerRetracement(lastPrice, newClose);
-  }
-}
 
   const open = lastPrice;
   const high = Math.max(open, newClose) + Math.random() * 0.02;
   const low = Math.min(open, newClose) - Math.random() * 0.02;
 
   const newCandle = {
-    time: time,
-    open: open,
+    time,
+    open,
     high: Math.max(high, open, newClose),
     low: Math.min(low, open, newClose),
     close: newClose,
   };
 
   data.push(newCandle);
-  if (data.length > 500) data.shift(); // keep history manageable
+  if (data.length > 500) data.shift();
   candleSeries.setData(data);
   updatePriceDisplay();
 }
 
-// ---- Pump (manual user action) ----
+// ---- Pump (manual action) ----
 function pump() {
   const raw = document.getElementById('priceInput').value;
   const v = Number(raw);
-  if (!isFinite(v) || raw === '') return alert('Enter a valid number (delta).');
+  if (!isFinite(v) || raw === '') return alert('Enter a valid number.');
   const delta = Math.abs(v);
 
   const lastPrice = data[data.length - 1].close;
@@ -137,14 +137,7 @@ function pump() {
   const high = Math.max(open, close) + Math.random() * baseSpike;
   const low  = Math.min(open, close) - Math.random() * baseSpike;
 
-  const newCandle = {
-    time: time,
-    open: open,
-    high: Math.max(high, open, close),
-    low:  Math.min(low, open, close),
-    close: close,
-  };
-
+  const newCandle = { time, open, high, low, close };
   data.push(newCandle);
 
   if (Math.abs(targetPrice - lastPrice) >= RETRACE_THRESHOLD) {
@@ -163,7 +156,7 @@ function toggleMarket() {
     marketInterval = null;
     console.log('Market stopped.');
   } else {
-    marketInterval = setInterval(generateCandle, 1000); // every 1s
+    marketInterval = setInterval(generateCandle, 1000);
     console.log('Market started.');
   }
 }
