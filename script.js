@@ -2,9 +2,13 @@
 const chart = LightweightCharts.createChart(document.getElementById('chart'), {
   width: 900,
   height: 450,
-  layout: { backgroundColor: '#ffffff', textColor: '#DDD' },
-  grid: { vertLines: { color: '#222' }, horzLines: { color: '#222' } },
+  layout: { backgroundColor: '#ffffff', textColor: '#000' },
+  grid: { 
+    vertLines: { color: 'transparent' }, 
+    horzLines: { color: 'transparent' } 
+  },
 });
+
 const candleSeries = chart.addCandlestickSeries();
 
 let data = [];
