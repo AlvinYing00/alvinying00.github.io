@@ -2,7 +2,7 @@
 const chart = LightweightCharts.createChart(document.getElementById('chart'), {
   width: 900,
   height: 450,
-  layout: { backgroundColor: '#ffffff', textColor: '#333' },
+  layout: { backgroundColor: '000000', textColor: '#333' },
   grid: { vertLines: { color: '#eee' }, horzLines: { color: '#eee' } },
 });
 const candleSeries = chart.addCandlestickSeries();
