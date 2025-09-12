@@ -45,15 +45,13 @@ function generateCandle() {
   time++;
   const lastPrice = data[data.length - 1].close;
 
-  // Stronger volatility (±0.2)
-  let drift = (Math.random() - 0.5) * 0.2;
-
-  // Always keep price >= 0.00001 to avoid breaking chart
-  let newClose = Math.max(0.00001, lastPrice + drift);
+  // More volatile random walk
+  const drift = (Math.random() - 0.5) * 0.02; // increase volatility
+  const newClose = Math.max(0, lastPrice + drift);
 
   const open = lastPrice;
-  const high = Math.max(open, newClose) + Math.random() * 0.05;
-  const low = Math.min(open, newClose) - Math.random() * 0.05;
+  const high = Math.max(open, newClose) + Math.random() * 0.01;
+  const low = Math.min(open, newClose) - Math.random() * 0.01;
 
   const newCandle = {
     time: time,
@@ -64,19 +62,6 @@ function generateCandle() {
   };
 
   data.push(newCandle);
-
-  // Keep chart light (last 200 candles only)
-  if (data.length > 200) {
-    data.shift();
-  }
-
-  candleSeries.setData(data);
-  updatePriceDisplay();
-}
-
-  data.push(newCandle);
-  // keep last N candles to avoid memory growth (optional)
-  // data = data.slice(-500);
   candleSeries.setData(data);
   updatePriceDisplay();
 }
