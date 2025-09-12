@@ -2,7 +2,7 @@
 const chart = LightweightCharts.createChart(document.getElementById('chart'), {
   width: 900,
   height: 450,
-  layout: { backgroundColor: '#000000', textColor: '#DDD' },
+  layout: { backgroundColor: '#ffffff', textColor: '#DDD' },
   grid: { vertLines: { color: '#222' }, horzLines: { color: '#222' } },
 });
 const candleSeries = chart.addCandlestickSeries();
@@ -76,22 +76,31 @@ function generateCandle() {
   let newClose;
 
   if (retraceTarget !== null && retraceSteps > 0) {
-    // ---- In retracement mode ----
-    const stepSize = (retraceTarget - lastPrice) / retraceSteps;
-    newClose = lastPrice + stepSize + (Math.random() - 0.5) * 0.002;
-    retraceSteps--;
+  // ---- In retracement mode ----
+  const stepSize = (retraceTarget - lastPrice) / retraceSteps;
 
-    if (retraceSteps <= 0) retraceTarget = null; // retracement finished
-  } else {
-    // ---- Normal volatility ----
-    const drift = (Math.random() - 0.5) * 0.1;
-    newClose = Math.max(0.00001, lastPrice + drift);
+  // Add randomness so it zig-zags but still trends
+  const noise = (Math.random() - 0.5) * stepSize * 2; 
+  newClose = lastPrice + stepSize + noise;
 
-    // Detect big pump/dump → trigger retracement
-    if (Math.abs(drift) >= RETRACE_THRESHOLD) {
-      triggerRetracement(lastPrice, newClose);
-    }
+  retraceSteps--;
+
+  // Clamp to avoid overshooting too wildly
+  if ((stepSize > 0 && newClose > retraceTarget) ||
+      (stepSize < 0 && newClose < retraceTarget)) {
+    newClose = retraceTarget;
   }
+
+  if (retraceSteps <= 0) retraceTarget = null; // done retracing
+} else {
+  // ---- Normal volatility ----
+  const drift = (Math.random() - 0.5) * 0.1;
+  newClose = Math.max(0.00001, lastPrice + drift);
+
+  if (Math.abs(drift) >= RETRACE_THRESHOLD) {
+    triggerRetracement(lastPrice, newClose);
+  }
+}
 
   const open = lastPrice;
   const high = Math.max(open, newClose) + Math.random() * 0.02;
