@@ -98,7 +98,7 @@ function generateCandle() {
     if (retraceSteps <= 0) retraceTarget = null;
   } else {
     // ---- Normal volatility ----
-    const drift = (Math.random() - 0.5) * 0.1;
+    const drift = (Math.random() - 0.5) * 0.02; // now range is -0.01 to +0.01
     newClose = Math.max(0.00001, lastPrice + drift);
 
     // Detect big move -> trigger retracement
