@@ -159,6 +159,42 @@ function pump() {
   updatePriceDisplay();
 }
 
+// ---- Optional: keep dump() if you need it later ----
+function dump() {
+  const raw = document.getElementById('priceInput').value;
+  const v = Number(raw);
+  if (!isFinite(v) || raw === '') return alert('Enter a valid number (delta).');
+  const delta = Math.abs(v);
+
+  const lastPrice = data[data.length - 1].close;
+  const targetPrice = Math.max(0.00001, lastPrice - delta); // dump down
+
+  time++;
+  const open = lastPrice;
+  const close = targetPrice;
+  const baseSpike = Math.max(Math.abs(close - open) * 0.6, 0.003);
+  const high = Math.max(open, close) + Math.random() * baseSpike;
+  const low  = Math.min(open, close) - Math.random() * baseSpike;
+
+  const newCandle = {
+    time: time,
+    open: open,
+    high: Math.max(high, open, close),
+    low:  Math.min(low, open, close),
+    close: close,
+  };
+
+  data.push(newCandle);
+
+  if (Math.abs(targetPrice - lastPrice) >= RETRACE_THRESHOLD) {
+    triggerRetracement(lastPrice, targetPrice);
+  }
+
+  if (data.length > 500) data.shift();
+  candleSeries.setData(data);
+  updatePriceDisplay();
+}
+
 // ---- Start/Stop live market ----
 function toggleMarket() {
   if (marketInterval) {
