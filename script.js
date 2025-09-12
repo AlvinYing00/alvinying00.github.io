@@ -18,31 +18,19 @@ let data = [];
 let time = 0;
 let marketInterval = null;
 
-// Generate random candle
+// Generate random candle every tick
 function generateCandle() {
     time++;
     let lastPrice = data.length ? data[data.length - 1].close : 1.2000;
 
     let direction = Math.random() > 0.5 ? "up" : "down";
-    let newCandle;
-
-    if (direction === "up") {
-        newCandle = {
-            time: time,
-            open: lastPrice,
-            high: lastPrice + Math.random() * 0.002,
-            low: lastPrice - Math.random() * 0.001,
-            close: lastPrice + Math.random() * 0.0015,
-        };
-    } else {
-        newCandle = {
-            time: time,
-            open: lastPrice,
-            high: lastPrice + Math.random() * 0.001,
-            low: lastPrice - Math.random() * 0.002,
-            close: lastPrice - Math.random() * 0.0015,
-        };
-    }
+    let newCandle = {
+        time: time,
+        open: lastPrice,
+        high: lastPrice + (direction === "up" ? Math.random() * 0.002 : Math.random() * 0.001),
+        low: lastPrice - (direction === "up" ? Math.random() * 0.001 : Math.random() * 0.002),
+        close: lastPrice + (direction === "up" ? Math.random() * 0.0015 : -Math.random() * 0.0015),
+    };
 
     data.push(newCandle);
     candleSeries.setData(data);
@@ -52,27 +40,18 @@ function generateCandle() {
 function pump() {
     const price = parseFloat(document.getElementById("priceInput").value);
     if (isNaN(price)) return alert("Enter a valid price!");
-
-    time++;
-    let lastPrice = data.length ? data[data.length - 1].close : 1.2000;
-
-    let newCandle = {
-        time: time,
-        open: lastPrice,
-        high: Math.max(lastPrice, price),
-        low: Math.min(lastPrice, price),
-        close: price,
-    };
-
-    data.push(newCandle);
-    candleSeries.setData(data);
+    addCustomCandle(price);
 }
 
 // Dump chart to target price
 function dump() {
     const price = parseFloat(document.getElementById("priceInput").value);
     if (isNaN(price)) return alert("Enter a valid price!");
+    addCustomCandle(price);
+}
 
+// Add manual candle
+function addCustomCandle(price) {
     time++;
     let lastPrice = data.length ? data[data.length - 1].close : 1.2000;
 
