@@ -79,13 +79,13 @@ function generateCandle() {
     // ---- Retracement mode ----
     const stepSize = (retraceTarget - lastPrice) / retraceSteps;
 
-    // Zig-zag movement
-    const noise = (Math.random() - 0.5) * stepSize * 2;
-    newClose = lastPrice + stepSize + noise;
+    // Add noise so some candles are green, some red
+    const noise = (Math.random() - 0.5) * Math.abs(stepSize) * 3;
 
+    newClose = lastPrice + stepSize + noise;
     retraceSteps--;
 
-    // Clamp overshoot
+    // Clamp overshoot so it doesn’t fly past retrace target
     if ((stepSize > 0 && newClose > retraceTarget) ||
         (stepSize < 0 && newClose < retraceTarget)) {
       newClose = retraceTarget;
@@ -97,20 +97,26 @@ function generateCandle() {
     const drift = (Math.random() - 0.5) * 0.1;
     newClose = Math.max(0.00001, lastPrice + drift);
 
+    // Detect big move -> trigger retracement
     if (Math.abs(drift) >= RETRACE_THRESHOLD) {
       triggerRetracement(lastPrice, newClose);
     }
   }
 
   const open = lastPrice;
-  const high = Math.max(open, newClose) + Math.random() * 0.02;
-  const low = Math.min(open, newClose) - Math.random() * 0.02;
+
+  // More natural wicks: randomize high/low around open & close
+  const bodyHigh = Math.max(open, newClose);
+  const bodyLow = Math.min(open, newClose);
+
+  const wickTop = bodyHigh + Math.random() * 0.02;  // random shadow up
+  const wickBottom = bodyLow - Math.random() * 0.02; // random shadow down
 
   const newCandle = {
     time,
     open,
-    high: Math.max(high, open, newClose),
-    low: Math.min(low, open, newClose),
+    high: wickTop,
+    low: wickBottom,
     close: newClose,
   };
 
