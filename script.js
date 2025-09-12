@@ -1,100 +1,130 @@
-// Create chart
+// ---- Chart setup ----
 const chart = LightweightCharts.createChart(document.getElementById('chart'), {
-    width: 800,
-    height: 400,
-    layout: {
-        backgroundColor: '#ffffff',
-        textColor: '#333',
-    },
-    grid: {
-        vertLines: { color: '#eee' },
-        horzLines: { color: '#eee' },
-    },
+  width: 900,
+  height: 450,
+  layout: { backgroundColor: '#ffffff', textColor: '#333' },
+  grid: { vertLines: { color: '#eee' }, horzLines: { color: '#eee' } },
 });
-
 const candleSeries = chart.addCandlestickSeries();
 
 let data = [];
 let time = 0;
 let marketInterval = null;
 
-// Seed the chart with the first candle
+const priceDisplay = document.getElementById('priceDisplay');
+
+// Format helper (5 decimal places for forex-like look)
+function fmt(num) {
+  return Number(num).toFixed(5);
+}
+
+// Seed the chart with a first candle so chart is not blank
 function initChart() {
-    let firstCandle = {
-        time: ++time,
-        open: 100,
-        high: 102,
-        low: 98,
-        close: 100,
-    };
-    data.push(firstCandle);
-    candleSeries.setData(data);
+  const initialPrice = 1.20000; // change to whatever base you prefer
+  const firstCandle = {
+    time: ++time,
+    open: initialPrice,
+    high: initialPrice + 0.0010,
+    low: initialPrice - 0.0010,
+    close: initialPrice,
+  };
+  data.push(firstCandle);
+  candleSeries.setData(data);
+  updatePriceDisplay();
 }
 initChart();
 
-// Generate random candle every tick
+// Update the displayed current price
+function updatePriceDisplay() {
+  const last = data[data.length - 1].close;
+  priceDisplay.textContent = 'Current: ' + fmt(last);
+}
+
+// ---- Auto market generator ----
 function generateCandle() {
-    time++;
-    let lastPrice = data[data.length - 1].close;
+  time++;
+  const lastPrice = data[data.length - 1].close;
 
-    let direction = Math.random() > 0.5 ? "up" : "down";
-    let newCandle = {
-        time: time,
-        open: lastPrice,
-        high: lastPrice + (direction === "up" ? Math.random() * 2 : Math.random() * 1),
-        low: lastPrice - (direction === "up" ? Math.random() * 1 : Math.random() * 2),
-        close: Math.max(0, lastPrice + (direction === "up" ? Math.random() * 1.5 : -Math.random() * 1.5)),
-    };
+  // small random walk to simulate market movement
+  const drift = (Math.random() - 0.5) * 0.002; // adjust volatility here
+  const newClose = Math.max(0, lastPrice + drift);
 
-    data.push(newCandle);
-    candleSeries.setData(data);
+  const open = lastPrice;
+  const high = Math.max(open, newClose) + Math.random() * 0.0006;
+  const low = Math.min(open, newClose) - Math.random() * 0.0006;
+
+  const newCandle = {
+    time: time,
+    open: open,
+    high: high,
+    low: low,
+    close: newClose,
+  };
+
+  data.push(newCandle);
+  // keep last N candles to avoid memory growth (optional)
+  // data = data.slice(-500);
+  candleSeries.setData(data);
+  updatePriceDisplay();
 }
 
-// Pump chart (add value to current price)
+// ---- Pump / Dump logic (uses input as delta) ----
+function getInputValue() {
+  const raw = document.getElementById('priceInput').value;
+  const v = Number(raw);
+  if (!isFinite(v)) return NaN;
+  return v;
+}
+
 function pump() {
-    const value = parseFloat(document.getElementById("priceInput").value);
-    if (isNaN(value)) return alert("Enter a valid number!");
+  const value = getInputValue();
+  if (isNaN(value)) return alert('Enter a valid number (delta).');
+  const delta = Math.abs(value); // ensure we add a positive delta
 
-    let lastPrice = data[data.length - 1].close;
-    let targetPrice = lastPrice + value; // add instead of set
-    addCustomCandle(targetPrice);
+  const lastPrice = data[data.length - 1].close;
+  const targetPrice = Math.max(0, lastPrice + delta); // prevent negative (shouldn't happen for pump)
+  console.log('PUMP ->', { lastPrice, delta, targetPrice });
+
+  addCustomCandle(targetPrice);
 }
 
-// Dump chart (subtract value from current price)
 function dump() {
-    const value = parseFloat(document.getElementById("priceInput").value);
-    if (isNaN(value)) return alert("Enter a valid number!");
+  const value = getInputValue();
+  if (isNaN(value)) return alert('Enter a valid number (delta).');
+  const delta = Math.abs(value); // ensure we subtract a positive delta
 
-    let lastPrice = data[data.length - 1].close;
-    let targetPrice = Math.max(0, lastPrice - value); // prevent negative
-    addCustomCandle(targetPrice);
+  const lastPrice = data[data.length - 1].close;
+  const targetPrice = Math.max(0, lastPrice - delta); // block negative
+  console.log('DUMP ->', { lastPrice, delta, targetPrice });
+
+  addCustomCandle(targetPrice);
 }
 
-// Add manual candle
 function addCustomCandle(price) {
-    time++;
-    let lastPrice = data[data.length - 1].close;
+  time++;
+  const lastPrice = data[data.length - 1].close;
 
-    let newCandle = {
-        time: time,
-        open: lastPrice,
-        high: Math.max(lastPrice, price),
-        low: Math.min(lastPrice, price),
-        close: price,
-    };
+  const newCandle = {
+    time: time,
+    open: lastPrice,
+    high: Math.max(lastPrice, price),
+    low: Math.min(lastPrice, price),
+    close: price,
+  };
 
-    data.push(newCandle);
-    candleSeries.setData(data);
+  data.push(newCandle);
+  candleSeries.setData(data);
+  updatePriceDisplay();
 }
 
-// Start/Stop Market
+// ---- Start/Stop live market ----
 function toggleMarket() {
-    if (marketInterval) {
-        clearInterval(marketInterval);
-        marketInterval = null;
-        console.log("Market stopped.");
-    } else {
-        marketInterval = setInterval(generateCandle, 1000);
-        console.log("Market started.");
-    }
+  if (marketInterval) {
+    clearInterval(marketInterval);
+    marketInterval = null;
+    console.log('Market stopped.');
+  } else {
+    marketInterval = setInterval(generateCandle, 1000); // 1 second
+    console.log('Market started.');
+  }
 }
