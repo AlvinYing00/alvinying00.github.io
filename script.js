@@ -40,20 +40,41 @@ function updatePriceDisplay() {
   priceDisplay.textContent = 'Current: ' + fmt(last);
 }
 
-// ---- Auto market generator ----
+let retraceTarget = null;
+let retraceSteps = 0;
+
 function generateCandle() {
   time++;
   const lastPrice = data[data.length - 1].close;
 
-  // Stronger volatility: ±0.1 (~1000 pips)
-  const drift = (Math.random() - 0.5) * 0.1;
-  const newClose = Math.max(0.00001, lastPrice + drift); // keep > 0
+  let newClose;
+
+  if (retraceTarget !== null && retraceSteps > 0) {
+    // ---- In retracement mode ----
+    const stepSize = (retraceTarget - lastPrice) / retraceSteps;
+    newClose = lastPrice + stepSize + (Math.random() - 0.5) * 0.005; // small noise
+    retraceSteps--;
+
+    if (retraceSteps <= 0) {
+      retraceTarget = null; // retracement complete
+    }
+  } else {
+    // ---- Normal volatility ----
+    const drift = (Math.random() - 0.5) * 0.1; // big swings
+    newClose = Math.max(0.00001, lastPrice + drift);
+
+    // Detect big rise/fall and trigger retracement
+    if (Math.abs(drift) > 0.05) {
+      retraceTarget = lastPrice + drift / 2; // aim halfway back
+      retraceSteps = Math.floor(Math.random() * 5) + 3; // 3–7 candles
+      console.log("Retracement triggered → target:", retraceTarget);
+    }
+  }
 
   const open = lastPrice;
-  const high = Math.max(open, newClose) + Math.random() * 0.05;
-  const low = Math.min(open, newClose) - Math.random() * 0.05;
+  const high = Math.max(open, newClose) + Math.random() * 0.02;
+  const low = Math.min(open, newClose) - Math.random() * 0.02;
 
-  // ✅ Safety check: ensure high >= open/close, low <= open/close
   const newCandle = {
     time: time,
     open: open,
@@ -64,11 +85,7 @@ function generateCandle() {
 
   data.push(newCandle);
 
-  // Optional: keep only the last 200 candles to avoid slowdown
-  if (data.length > 200) {
-    data.shift();
-  }
-
+  if (data.length > 200) data.shift(); // keep memory light
   candleSeries.setData(data);
   updatePriceDisplay();
 }
