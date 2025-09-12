@@ -18,10 +18,24 @@ let data = [];
 let time = 0;
 let marketInterval = null;
 
+// Seed the chart with the first candle
+function initChart() {
+    let firstCandle = {
+        time: ++time,
+        open: 1.2000,
+        high: 1.2010,
+        low: 1.1990,
+        close: 1.2005,
+    };
+    data.push(firstCandle);
+    candleSeries.setData(data);
+}
+initChart();
+
 // Generate random candle every tick
 function generateCandle() {
     time++;
-    let lastPrice = data.length ? data[data.length - 1].close : 1.2000;
+    let lastPrice = data[data.length - 1].close;
 
     let direction = Math.random() > 0.5 ? "up" : "down";
     let newCandle = {
@@ -53,7 +67,7 @@ function dump() {
 // Add manual candle
 function addCustomCandle(price) {
     time++;
-    let lastPrice = data.length ? data[data.length - 1].close : 1.2000;
+    let lastPrice = data[data.length - 1].close;
 
     let newCandle = {
         time: time,
