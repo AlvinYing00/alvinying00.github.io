@@ -45,25 +45,30 @@ function generateCandle() {
   time++;
   const lastPrice = data[data.length - 1].close;
 
-  // small random walk to simulate market movement
-  const drift = (Math.random() - 0.5) * 0.002; // adjust volatility here
-  const newClose = Math.max(0, lastPrice + drift);
+  // Stronger volatility: ±0.1 (~1000 pips)
+  const drift = (Math.random() - 0.5) * 0.1;
+  const newClose = Math.max(0.00001, lastPrice + drift); // keep > 0
 
   const open = lastPrice;
-  const high = Math.max(open, newClose) + Math.random() * 0.0006;
-  const low = Math.min(open, newClose) - Math.random() * 0.0006;
+  const high = Math.max(open, newClose) + Math.random() * 0.05;
+  const low = Math.min(open, newClose) - Math.random() * 0.05;
 
+  // ✅ Safety check: ensure high >= open/close, low <= open/close
   const newCandle = {
     time: time,
     open: open,
-    high: high,
-    low: low,
+    high: Math.max(high, open, newClose),
+    low: Math.min(low, open, newClose),
     close: newClose,
   };
 
   data.push(newCandle);
-  // keep last N candles to avoid memory growth (optional)
-  // data = data.slice(-500);
+
+  // Optional: keep only the last 200 candles to avoid slowdown
+  if (data.length > 200) {
+    data.shift();
+  }
+
   candleSeries.setData(data);
   updatePriceDisplay();
 }
