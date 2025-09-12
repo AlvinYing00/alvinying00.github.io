@@ -45,9 +45,11 @@ function generateCandle() {
   time++;
   const lastPrice = data[data.length - 1].close;
 
-  // BIGGER random walk for more volatility
-  const drift = (Math.random() - 0.5) * 0.1; // ~±1000 pips in one candle
-  const newClose = Math.max(0, lastPrice + drift);
+  // Stronger volatility (±0.2)
+  let drift = (Math.random() - 0.5) * 0.2;
+
+  // Always keep price >= 0.00001 to avoid breaking chart
+  let newClose = Math.max(0.00001, lastPrice + drift);
 
   const open = lastPrice;
   const high = Math.max(open, newClose) + Math.random() * 0.05;
@@ -62,6 +64,12 @@ function generateCandle() {
   };
 
   data.push(newCandle);
+
+  // Keep chart light (last 200 candles only)
+  if (data.length > 200) {
+    data.shift();
+  }
+
   candleSeries.setData(data);
   updatePriceDisplay();
 }
