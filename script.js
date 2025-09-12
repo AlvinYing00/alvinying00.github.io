@@ -45,13 +45,13 @@ function generateCandle() {
   time++;
   const lastPrice = data[data.length - 1].close;
 
-  // More volatile random walk
-  const drift = (Math.random() - 0.5) * 0.02; // increase volatility
+  // BIGGER random walk for more volatility
+  const drift = (Math.random() - 0.5) * 0.1; // ~±1000 pips in one candle
   const newClose = Math.max(0, lastPrice + drift);
 
   const open = lastPrice;
-  const high = Math.max(open, newClose) + Math.random() * 0.01;
-  const low = Math.min(open, newClose) - Math.random() * 0.01;
+  const high = Math.max(open, newClose) + Math.random() * 0.05;
+  const low = Math.min(open, newClose) - Math.random() * 0.05;
 
   const newCandle = {
     time: time,
