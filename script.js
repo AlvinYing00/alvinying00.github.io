@@ -61,7 +61,7 @@ function triggerRetracement(prevPrice, movedPrice) {
   retraceTarget = movedPrice - delta * frac;
   retraceTarget = Math.max(0.00001, retraceTarget);
 
-  retraceSteps = Math.floor(Math.random() * 20) + 20; // 20–40 candles
+  retraceSteps = Math.floor(Math.random() * 20) + 10; // 20–40 candles
 
   console.log('Retrace TRIGGERED:', {
     prevPrice,
@@ -98,7 +98,7 @@ function generateCandle() {
     if (retraceSteps <= 0) retraceTarget = null;
   } else {
     // ---- Normal volatility ----
-    const drift = (Math.random() - 0.5) * 0.1;
+    const drift = (Math.random() - 0.5) * 0.2;
     newClose = Math.max(0.00001, lastPrice + drift);
 
     // Detect big move -> trigger retracement
