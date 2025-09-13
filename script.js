@@ -58,9 +58,21 @@ function initChart() {
 initChart();
 
 function updatePriceDisplay() {
-  if (!data.length) return;
+  if (data.length < 2) return;
   const last = data[data.length - 1].close;
+  const prev = data[data.length - 2].close;
+
+  // Update text
   priceDisplay.textContent = 'Current: ' + fmt(last);
+
+  // Color based on price movement
+  if (last > prev) {
+    priceDisplay.style.color = 'limegreen'; // green if price up
+  } else if (last < prev) {
+    priceDisplay.style.color = 'red'; // red if price down
+  } else {
+    priceDisplay.style.color = '#DDD'; // neutral (no change)
+  }
 }
 
 // ---- Utility: trigger retracement ----
