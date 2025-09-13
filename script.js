@@ -102,8 +102,12 @@ let sessionLow = null;
 
 function updatePriceDisplay() {
   if (data.length < 2) return;
-  const last = data[data.length - 1].close;
-  const prev = data[data.length - 2].close;
+
+  const lastCandle = data[data.length - 1];
+  const prevCandle = data[data.length - 2];
+
+  const last = lastCandle.close;
+  const prev = prevCandle.close;
 
   // Update current price
   priceDisplay.textContent = fmt(last);
@@ -117,12 +121,12 @@ function updatePriceDisplay() {
     priceDisplay.style.color = '#DDD';
   }
 
-  // Track session high/low
-  if (sessionHigh === null || last > sessionHigh) {
-    sessionHigh = last;
+  // Track session high/low using full wick values
+  if (sessionHigh === null || lastCandle.high > sessionHigh) {
+    sessionHigh = lastCandle.high;
   }
-  if (sessionLow === null || last < sessionLow) {
-    sessionLow = last;
+  if (sessionLow === null || lastCandle.low < sessionLow) {
+    sessionLow = lastCandle.low;
   }
 
   // Update high/low display
