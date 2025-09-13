@@ -180,13 +180,20 @@ function pump() {
   time++;
   const open = lastPrice;
   const close = targetPrice;
-  const baseSpike = Math.max(Math.abs(close - open) * 0.6, getVolatility(lastPrice) * 0.03);
-  const high = Math.max(open, close) + Math.random() * baseSpike;
-  const low  = Math.max(0.01, Math.min(open, close) - Math.random() * baseSpike);
 
-  const newCandle = { time, open, high, low, close };
+  // --- Pump spike ---
+  const baseSpike = Math.max(Math.abs(close - open) * 0.6, getVolatility(lastPrice) * 0.03);
+
+  // High wick above close
+  const high = close + Math.random() * baseSpike;
+
+  // Low wick should not go below original price
+  const low = open - Math.random() * baseSpike * 0.1; // tiny tail for realism
+
+  const newCandle = { time, open, high, low: Math.max(low, open), close }; 
   data.push(newCandle);
 
+  // Trigger retracement if necessary
   if (Math.abs(targetPrice - lastPrice) >= getRetraceThreshold(lastPrice)) {
     triggerRetracement(lastPrice, targetPrice);
   }
@@ -200,7 +207,7 @@ function pump() {
 function dump() {
   const raw = document.getElementById('priceInput').value;
   const v = Number(raw);
-  if (!isFinite(v) || raw === '') return alert('Enter a valid number (delta).');
+  if (!isFinite(v) || raw === '') return alert('Enter a valid number.');
   const delta = Math.abs(v);
 
   const lastPrice = data[data.length - 1].close;
@@ -209,11 +216,15 @@ function dump() {
   time++;
   const open = lastPrice;
   const close = targetPrice;
-  const baseSpike = Math.max(Math.abs(close - open) * 0.6, getVolatility(lastPrice) * 0.03);
-  const high = Math.max(open, close) + Math.random() * baseSpike;
-  const low  = Math.max(0.01, Math.min(open, close) - Math.random() * baseSpike);
 
-  const newCandle = { time, open, high, low, close };
+  const baseSpike = Math.max(Math.abs(close - open) * 0.6, getVolatility(lastPrice) * 0.03);
+
+  // High wick should not go above original price
+  const high = open + Math.random() * baseSpike * 0.1; // tiny tail
+  // Low wick below close
+  const low = close - Math.random() * baseSpike;
+
+  const newCandle = { time, open, high: Math.min(high, open), low: Math.max(low, 0.00001), close };
   data.push(newCandle);
 
   if (Math.abs(targetPrice - lastPrice) >= getRetraceThreshold(lastPrice)) {
