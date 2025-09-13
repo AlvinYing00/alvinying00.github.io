@@ -23,6 +23,89 @@ const RETRACE_MAX_FRAC = 0.80;   // 80%
 
 let retraceTarget = null;
 let retraceSteps = 0; // candles left in retracement
+let currentPattern = null;
+let patternQueue = [];
+let patternCooldown = 0; // countdown in seconds
+
+function scheduleNextPattern() {
+  const patterns = ["doubleTop", "headShoulders", "triangle", "flag", "wedge"];
+  const choice = patterns[Math.floor(Math.random() * patterns.length)];
+
+  patternQueue.push(choice);
+  patternCooldown = 120; // wait 120 seconds before new pattern
+  console.log("Next pattern scheduled:", choice);
+}
+
+function startPattern(name) {
+  const steps = Math.floor(30 + Math.random() * 30); // 30–60 candles
+  currentPattern = { name, steps, totalSteps: steps };
+}
+
+// ---- Double Top Pattern ----
+function generateDoubleTopCandle() {
+  if (!currentPattern) return;
+
+  const lastPrice = data[data.length - 1].close;
+  const totalSteps = currentPattern.totalSteps;
+  const step = currentPattern.totalSteps - currentPattern.steps;
+
+  let newClose = lastPrice;
+
+  // --- PHASES ---
+  if (step < totalSteps * 0.2) {
+    // Phase 1: Impulse Up
+    newClose = lastPrice + getVolatility(lastPrice) * 1.5;
+  } else if (step < totalSteps * 0.35) {
+    // Phase 2: First Top (flat-ish)
+    newClose = lastPrice + (Math.random() - 0.5) * getVolatility(lastPrice) * 0.2;
+  } else if (step < totalSteps * 0.55) {
+    // Phase 3: Pullback
+    newClose = lastPrice - getVolatility(lastPrice) * 0.8;
+  } else if (step < totalSteps * 0.75) {
+    // Phase 4: Second Top (near first top)
+    const firstTop = currentPattern.firstTopPrice;
+    if (!firstTop) currentPattern.firstTopPrice = sessionHigh || lastPrice;
+    const target = currentPattern.firstTopPrice;
+    newClose = lastPrice + (target - lastPrice) * 0.3 + (Math.random() - 0.5) * getVolatility(lastPrice) * 0.2;
+  } else {
+    // Phase 5: Breakdown
+    newClose = lastPrice - getVolatility(lastPrice) * 1.2;
+  }
+
+  // ---- Candle body + wick ----
+  time++;
+  const open = lastPrice;
+  const bodyHigh = Math.max(open, newClose);
+  const bodyLow = Math.min(open, newClose);
+  const wickTop = bodyHigh + Math.random() * getVolatility(lastPrice) * 0.3;
+  const wickBottom = Math.max(0.01, bodyLow - Math.random() * getVolatility(lastPrice) * 0.3);
+
+  const newCandle = { time, open, high: wickTop, low: wickBottom, close: newClose };
+  data.push(newCandle);
+
+  if (data.length > 3000) data.shift();
+  candleSeries.setData(data);
+  updatePriceDisplay();
+}
+
+function continuePattern() {
+  if (!currentPattern) return;
+
+  switch (currentPattern.name) {
+    case "doubleTop":
+      generateDoubleTopCandle();
+      break;
+    default:
+      generateCandle();
+  }
+
+  currentPattern.steps--;
+  if (currentPattern.steps <= 0) {
+    console.log("Pattern finished:", currentPattern.name);
+    currentPattern = null;
+    patternCooldown = 120;
+  }
+}
 
 // ---- Format helper ----
 function fmt(num) {
@@ -236,6 +319,32 @@ function dump() {
   updatePriceDisplay();
 }
 
+function generatePatternCandle() {
+  if (currentPattern) {
+    continuePattern();
+    return;
+  }
+
+  if (patternCooldown > 0) {
+    generateCandle(); // normal drift while waiting
+    patternCooldown--;
+
+    if (patternCooldown === 0) {
+      scheduleNextPattern();
+    }
+    return;
+  }
+
+  if (patternQueue.length > 0) {
+    const next = patternQueue.shift();
+    startPattern(next);
+    return;
+  }
+
+  // Default drift
+  generateCandle();
+}
+
 // ---- Start/Stop live market ----
 function toggleMarket() {
   if (marketInterval) {
@@ -243,7 +352,7 @@ function toggleMarket() {
     marketInterval = null;
     console.log('Market stopped.');
   } else {
-    marketInterval = setInterval(generateCandle, 1000);
+    marketInterval = setInterval(generatePatternCandle, 1000);
     console.log('Market started.');
   }
 }
