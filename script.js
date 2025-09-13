@@ -265,8 +265,8 @@ function pump() {
   // High wick above close
   const high = close + Math.random() * baseSpike;
 
-  // Low wick should not go below original price
-  const low = open - Math.random() * baseSpike * 0.1; // tiny tail for realism
+  // Low wick should never go below open
+  const low = Math.max(0.00001, open - Math.random() * baseSpike * 0.1);
 
   const newCandle = {
     time,
@@ -301,12 +301,14 @@ function dump() {
   const open = lastPrice;
   const close = targetPrice;
 
+  // --- Dump spike ---
   const baseSpike = Math.max(Math.abs(close - open) * 0.6, getVolatility(lastPrice) * 0.03);
 
-  // High wick should not go above original price
-  const high = open + Math.random() * baseSpike * 0.1; // tiny tail
+  // High wick should never go above open
+  const high = Math.min(open, open + Math.random() * baseSpike * 0.1);
+
   // Low wick below close
-  const low = close - Math.random() * baseSpike;
+  const low = Math.max(0.00001, close - Math.random() * baseSpike);
 
   const newCandle = {
     time,
