@@ -32,7 +32,7 @@ function fmt(num) {
 
 // ---- Init first candle ----
 function initChart() {
-  const initialPrice = 10 + Math.random() * 90; // random between 10 - 90
+  const initialPrice = 1 + Math.random() * 9; // random between 1 -9
   const firstCandle = {
     time: ++time,
     open: initialPrice,
