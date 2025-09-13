@@ -37,7 +37,7 @@ function scheduleNextPattern() {
 }
 
 function startPattern(name) {
-  const steps = Math.floor(30 + Math.random() * 30); // 30–60 candles
+  const steps = Math.floor(80 + Math.random() * 71); // 80–150 candles
   currentPattern = { name, steps, totalSteps: steps };
 }
 
