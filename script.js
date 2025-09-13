@@ -199,7 +199,13 @@ function generateCandle() {
   const wickTop = Math.max(bodyHigh, bodyHigh + Math.random() * getVolatility(lastPrice) * 0.3);
   const wickBottom = Math.min(bodyLow, Math.max(0.01, bodyLow - Math.random() * getVolatility(lastPrice) * 0.3));
 
-  const newCandle = { time, open, high: wickTop, low: wickBottom, close: newClose };
+  const newCandle = {
+    time,
+    open,
+    high: Math.max(open, newClose, wickTop),
+    low: Math.min(open, newClose, wickBottom),
+    close: newClose
+  };
   data.push(newCandle);
 
   if (data.length > 3000) data.shift();
@@ -230,7 +236,13 @@ function pump() {
   // Low wick should not go below original price
   const low = open - Math.random() * baseSpike * 0.1; // tiny tail for realism
 
-  const newCandle = { time, open, high, low: Math.max(low, open), close }; 
+  const newCandle = {
+    time,
+    open,
+    high: Math.max(open, close, high),
+    low: Math.min(open, close, low),
+    close
+  };
   data.push(newCandle);
 
   // Trigger retracement if necessary
@@ -264,7 +276,13 @@ function dump() {
   // Low wick below close
   const low = close - Math.random() * baseSpike;
 
-  const newCandle = { time, open, high: Math.min(high, open), low: Math.max(low, 0.00001), close };
+  const newCandle = {
+    time,
+    open,
+    high: Math.max(open, close, high),
+    low: Math.min(open, close, Math.max(low, 0.00001)),
+    close
+  };
   data.push(newCandle);
 
   if (Math.abs(targetPrice - lastPrice) >= getRetraceThreshold(lastPrice)) {
