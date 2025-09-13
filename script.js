@@ -27,7 +27,7 @@ let retraceSteps = 0; // candles left in retracement
 
 // ---- Format helper ----
 function fmt(num) {
-  return Number(num).toFixed(5);
+  return Number(num).toFixed(2); // only 2 decimals
 }
 
 // ---- Init first candle ----
@@ -74,56 +74,49 @@ function triggerRetracement(prevPrice, movedPrice) {
 }
 
 // ---- Auto market generator ----
+let candleCounter = 0;
+let nextBigMoveAt = Math.floor(Math.random() * 60) + 60; // between 60–120
+
 function generateCandle() {
   time++;
+  candleCounter++;
   const lastPrice = data[data.length - 1].close;
   let newClose;
 
-  if (retraceTarget !== null && retraceSteps > 0) {
-    // ---- Retracement mode ----
-    const stepSize = (retraceTarget - lastPrice) / retraceSteps;
+  // ---- Auto pump/dump ----
+  if (candleCounter >= nextBigMoveAt) {
+    const bigMove = (Math.random() < 0.5 ? 1 : -1) * (0.5 + Math.random() * 2.0); 
+    newClose = Math.max(0.01, lastPrice + bigMove);
 
-    // Add noise so some candles are green, some red
-    const noise = (Math.random() - 0.5) * Math.abs(stepSize) * 3;
+    candleCounter = 0;
+    nextBigMoveAt = Math.floor(Math.random() * 60) + 60; // reset schedule
 
-    newClose = lastPrice + stepSize + noise;
-    retraceSteps--;
-
-    // Clamp overshoot so it doesn’t fly past retrace target
-    if ((stepSize > 0 && newClose > retraceTarget) ||
-        (stepSize < 0 && newClose < retraceTarget)) {
-      newClose = retraceTarget;
-    }
-
-    if (retraceSteps <= 0) retraceTarget = null;
-  } else {
-    // ---- Normal volatility ----
-    const drift = (Math.random() - 0.5) * 0.1;
-    newClose = Math.max(0.00001, lastPrice + drift);
-
-    // Detect big move -> trigger retracement
-    if (Math.abs(drift) >= RETRACE_THRESHOLD) {
-      triggerRetracement(lastPrice, newClose);
+    console.log(`BIG MOVE: ${bigMove.toFixed(2)}, new price = ${newClose.toFixed(2)}`);
+    triggerRetracement(lastPrice, newClose); // retrace after big move
+  }
+  else {
+    // ---- Normal mode (your existing logic) ----
+    if (retraceTarget !== null && retraceSteps > 0) {
+      const stepSize = (retraceTarget - lastPrice) / retraceSteps;
+      const noise = (Math.random() - 0.5) * Math.abs(stepSize) * 3;
+      newClose = lastPrice + stepSize + noise;
+      retraceSteps--;
+      if (retraceSteps <= 0) retraceTarget = null;
+    } else {
+      const drift = (Math.random() - 0.5) * (Math.random() * 1 + 0.01);
+      newClose = Math.max(0.01, lastPrice + drift);
+      if (Math.abs(drift) >= RETRACE_THRESHOLD) triggerRetracement(lastPrice, newClose);
     }
   }
 
+  // ---- Candle body + wick ----
   const open = lastPrice;
-
-  // More natural wicks: randomize high/low around open & close
   const bodyHigh = Math.max(open, newClose);
   const bodyLow = Math.min(open, newClose);
+  const wickTop = bodyHigh + Math.random() * 0.02;
+  const wickBottom = bodyLow - Math.random() * 0.02;
 
-  const wickTop = bodyHigh + Math.random() * 0.02;  // random shadow up
-  const wickBottom = bodyLow - Math.random() * 0.02; // random shadow down
-
-  const newCandle = {
-    time,
-    open,
-    high: wickTop,
-    low: wickBottom,
-    close: newClose,
-  };
-
+  const newCandle = { time, open, high: wickTop, low: wickBottom, close: newClose };
   data.push(newCandle);
   if (data.length > 500) data.shift();
   candleSeries.setData(data);
