@@ -362,3 +362,10 @@ function toggleMarket() {
     console.log('Market started.');
   }
 }
+
+window.addEventListener('resize', () => {
+  chart.resize(
+    document.getElementById('chart').clientWidth,
+    document.getElementById('chart').clientHeight
+  );
+});
