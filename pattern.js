@@ -176,3 +176,56 @@ function generateTriangleCandle() {
   candleSeries.setData(data);
   updatePriceDisplay();
 }
+
+// ---- Flag Pattern ----
+function generateFlagCandle() {
+  if (!currentPattern) return;
+
+  const lastPrice = data[data.length - 1].close;
+  const totalSteps = currentPattern.totalSteps;
+  const step = currentPattern.totalSteps - currentPattern.steps;
+
+  let newClose = lastPrice;
+
+  // Decide flagpole direction once at start
+  if (currentPattern.direction === undefined) {
+    currentPattern.direction = Math.random() < 0.5 ? "up" : "down";
+  }
+  const dir = currentPattern.direction;
+
+  // --- PHASES ---
+  if (step < totalSteps * 0.2) {
+    // Phase 1: Flagpole (sharp move)
+    newClose = dir === "up" ? lastPrice + getVolatility(lastPrice) * 2 : lastPrice - getVolatility(lastPrice) * 2;
+  } else if (step < totalSteps * 0.8) {
+    // Phase 2: Flag consolidation (small counter-trend)
+    const flagMove = getVolatility(lastPrice) * 0.3;
+    newClose = dir === "up" 
+      ? lastPrice - Math.random() * flagMove 
+      : lastPrice + Math.random() * flagMove;
+  } else {
+    // Phase 3: Breakout continuation
+    newClose = dir === "up" ? lastPrice + getVolatility(lastPrice) * 1.5 : lastPrice - getVolatility(lastPrice) * 1.5;
+  }
+
+  // ---- Candle body + wick ----
+  time++;
+  const open = lastPrice;
+  const bodyHigh = Math.max(open, newClose);
+  const bodyLow = Math.min(open, newClose);
+  const wickTop = Math.max(open, newClose, bodyHigh + Math.random() * getVolatility(lastPrice) * 0.3);
+  const wickBottom = Math.min(open, newClose, Math.max(0.01, bodyLow - Math.random() * getVolatility(lastPrice) * 0.3));
+
+  const newCandle = {
+    time,
+    open,
+    high: wickTop,
+    low: wickBottom,
+    close: newClose
+  };
+
+  data.push(newCandle);
+  if (data.length > 3000) data.shift();
+  candleSeries.setData(data);
+  updatePriceDisplay();
+}
