@@ -117,3 +117,62 @@ function generateHeadAndShouldersCandle() {
   candleSeries.setData(data);
   updatePriceDisplay();
 }
+
+function generateTriangleCandle() {
+  if (!currentPattern.triangleType) {
+    const types = ["sym", "asc", "desc"];
+    currentPattern.triangleType = types[Math.floor(Math.random() * types.length)];
+    console.log("Triangle type:", currentPattern.triangleType);
+  }
+
+  const lastPrice = data[data.length - 1].close;
+  const progress = 1 - (currentPattern.steps / currentPattern.totalSteps); // 0 → 1
+
+  const startRange = getVolatility(lastPrice) * 30;
+  const endRange = getVolatility(lastPrice) * 5;
+  const currentRange = startRange - progress * (startRange - endRange);
+
+  let upper, lower;
+
+  switch (currentPattern.triangleType) {
+    case "sym": // symmetrical
+      upper = lastPrice + (startRange / 2) * (1 - progress);
+      lower = lastPrice - (startRange / 2) * (1 - progress);
+      break;
+
+    case "asc": // ascending triangle (flat top, rising bottom)
+      upper = lastPrice + startRange * 0.5; // resistance line fixed
+      lower = lastPrice - startRange * 0.5 * (1 - progress); // bottom rising
+      break;
+
+    case "desc": // descending triangle (flat bottom, falling top)
+      upper = lastPrice + startRange * 0.5 * (1 - progress); // top falling
+      lower = lastPrice - startRange * 0.5; // support fixed
+      break;
+  }
+
+  // Midline moves inside the range
+  const midline = (upper + lower) / 2;
+  const newClose = midline + (Math.random() - 0.5) * (upper - lower);
+
+  // Candle construction
+  const open = lastPrice;
+  const bodyHigh = Math.max(open, newClose);
+  const bodyLow = Math.min(open, newClose);
+
+  const wickTop = bodyHigh + Math.random() * currentRange * 0.2;
+  const wickBottom = bodyLow - Math.random() * currentRange * 0.2;
+
+  const newCandle = {
+    time: ++time,
+    open,
+    high: Math.max(open, newClose, wickTop),
+    low: Math.min(open, newClose, wickBottom),
+    close: newClose
+  };
+
+  data.push(newCandle);
+  if (data.length > 3000) data.shift();
+  candleSeries.setData(data);
+  updatePriceDisplay();
+}
