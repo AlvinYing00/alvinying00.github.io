@@ -52,6 +52,9 @@ function continuePattern() {
     case "headShoulders":
       generateHeadAndShouldersCandle();
     break;
+    case "triangle":
+      generateTriangleCandle();
+    break;
   default:
     generateCandle();
 }
