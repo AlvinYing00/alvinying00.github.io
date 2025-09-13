@@ -25,6 +25,12 @@ let retraceSteps = 0; // candles left in retracement
 let currentPattern = null;
 let patternQueue = [];
 let patternCooldown = 0; // countdown in seconds
+let currentTrend = null; // "up" or "down"
+let trendSteps = 0;      // remaining candles in trend
+const TREND_CHANCE = 0.15;   // 15% chance to start a trend when idle
+const TREND_MIN_STEPS = 5;   // minimum candles per trend
+const TREND_MAX_STEPS = 15;  // maximum candles per trend
+const TREND_VOL_FACTOR = 0.5; // smooth the trend (less randomness)
 
 function scheduleNextPattern() {
   const patterns = ["doubleTop", "doubleBottom", "headShoulders", "triangle", "flag", "wedge"];
@@ -192,6 +198,18 @@ function generateCandle() {
       newClose = retraceTarget; // ensure final candle hits retracement target exactly
       retraceTarget = null;
     }
+  } else if (currentTrend) {
+    // Smooth trend drift
+    const baseVol = getVolatility(lastPrice) * TREND_VOL_FACTOR;
+    const step = baseVol * (currentTrend === "up" ? 1 : -1);
+    const noise = (Math.random() - 0.5) * baseVol * 0.4;
+    newClose = Math.max(0.01, lastPrice + step + noise);
+
+    trendSteps--;
+    if (trendSteps <= 0) {
+      console.log("Trend ended:", currentTrend);
+      currentTrend = null;
+    }
   } else {
     // --- Normal drift mode ---
     const baseVol = getVolatility(lastPrice);
@@ -223,6 +241,14 @@ function generateCandle() {
   if (data.length > 3000) data.shift();
   candleSeries.setData(data);
   updatePriceDisplay();
+}
+
+function maybeStartTrend() {
+  if (!currentTrend && Math.random() < TREND_CHANCE) {
+    currentTrend = Math.random() < 0.5 ? "up" : "down";
+    trendSteps = TREND_MIN_STEPS + Math.floor(Math.random() * (TREND_MAX_STEPS - TREND_MIN_STEPS + 1));
+    console.log("Trend started:", currentTrend, "for", trendSteps, "candles");
+  }
 }
 
 // ---- Pump (manual action) ----
