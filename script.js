@@ -165,7 +165,6 @@ function triggerRetracement(prevPrice, movedPrice) {
 
 // ---- Auto market generator ----
 function generateCandle() {
-  if (!currentPattern) maybeRandomSpike();
   time++;
   const lastPrice = data[data.length - 1].close;
   let newClose;
