@@ -1,5 +1,3 @@
-// patterns.js
-
 function generateDoubleTopCandle() {
   if (!currentPattern) return;
   const lastPrice = data[data.length - 1].close;
