@@ -229,3 +229,54 @@ function generateFlagCandle() {
   candleSeries.setData(data);
   updatePriceDisplay();
 }
+
+// ---- Wedge Pattern ----
+function generateWedgeCandle() {
+  if (!currentPattern) return;
+
+  const lastPrice = data[data.length - 1].close;
+  const totalSteps = currentPattern.totalSteps;
+  const step = currentPattern.totalSteps - currentPattern.steps;
+
+  // Decide wedge direction once at start
+  if (currentPattern.direction === undefined) {
+    currentPattern.direction = Math.random() < 0.5 ? "rising" : "falling";
+    currentPattern.startVol = getVolatility(lastPrice) * 1.5; // initial volatility
+  }
+
+  const dir = currentPattern.direction;
+  const progress = step / totalSteps;
+  const maxVol = currentPattern.startVol;
+  const wedgeVol = maxVol * (1 - progress); // gradually decreasing volatility
+
+  let newClose = lastPrice;
+
+  if (dir === "rising") {
+    // Rising wedge: uptrend narrowing
+    newClose = lastPrice + wedgeVol * 0.7 - Math.random() * wedgeVol * 0.3;
+  } else {
+    // Falling wedge: downtrend narrowing
+    newClose = lastPrice - wedgeVol * 0.7 + Math.random() * wedgeVol * 0.3;
+  }
+
+  // ---- Candle body + wick ----
+  time++;
+  const open = lastPrice;
+  const bodyHigh = Math.max(open, newClose);
+  const bodyLow = Math.min(open, newClose);
+  const wickTop = Math.max(open, newClose, bodyHigh + Math.random() * wedgeVol * 0.3);
+  const wickBottom = Math.min(open, newClose, Math.max(0.01, bodyLow - Math.random() * wedgeVol * 0.3));
+
+  const newCandle = {
+    time,
+    open,
+    high: wickTop,
+    low: wickBottom,
+    close: newClose
+  };
+
+  data.push(newCandle);
+  if (data.length > 3000) data.shift();
+  candleSeries.setData(data);
+  updatePriceDisplay();
+}
