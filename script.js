@@ -42,16 +42,19 @@ function startPattern(name) {
 function continuePattern() {
   if (!currentPattern) return;
 
-  switch (currentPattern.name) {
+  switch(currentPattern.name) {
     case "doubleTop":
       generateDoubleTopCandle();
-      break;
+    break;
     case "doubleBottom":
       generateDoubleBottomCandle();
-      break;
-    default:
-      generateCandle();
-  }
+    break;
+    case "headShoulders":
+      generateHeadAndShouldersCandle();
+    break;
+  default:
+    generateCandle();
+}
 
   currentPattern.steps--;
   if (currentPattern.steps <= 0) {
