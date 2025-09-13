@@ -344,7 +344,7 @@ function maybeRandomSpike() {
   const chance = 0.05; // 5% chance
   if (Math.random() < chance) {
     const lastPrice = data[data.length - 1].close;
-    const delta = lastPrice * 0.10; // 10% spike
+    const delta = lastPrice * 0.05; // 5% spike
 
     if (Math.random() < 0.5) {
       triggerPump(delta);
