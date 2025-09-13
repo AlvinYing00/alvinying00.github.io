@@ -91,12 +91,28 @@ function generateCandle() {
   let newClose;
 
   if (retraceTarget !== null && retraceSteps > 0) {
-    // --- Retracement mode ---
-    const stepSize = (retraceTarget - lastPrice) / retraceSteps;
-    const noise = (Math.random() - 0.5) * Math.abs(stepSize) * 1.5;
-    newClose = lastPrice + stepSize + noise;
+    // --- Retracement mode with counter-trend candles ---
+    const remainingDelta = retraceTarget - lastPrice;
+    const baseStep = remainingDelta / retraceSteps;
+    const noiseFactor = Math.abs(baseStep) * 0.6;
+    let noise = (Math.random() - 0.5) * noiseFactor * 2;
+
+    // ~35% chance to flip the step slightly to create green candles during down retrace
+    const directionFlipChance = 0.35;
+    let step = baseStep + noise;
+    if (step < 0 && Math.random() < directionFlipChance) {
+      step = -step * (0.3 + Math.random() * 0.7); // partial flip
+    } else if (step > 0 && Math.random() < directionFlipChance) {
+      step = -step * (0.3 + Math.random() * 0.7);
+    }
+
+    newClose = lastPrice + step;
+
     retraceSteps--;
-    if (retraceSteps <= 0) retraceTarget = null;
+    if (retraceSteps <= 0) {
+      newClose = retraceTarget; // ensure final candle hits retracement target exactly
+      retraceTarget = null;
+    }
   } else {
     // --- Normal drift mode ---
     const baseVol = getVolatility(lastPrice);
