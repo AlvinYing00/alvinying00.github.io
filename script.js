@@ -165,6 +165,7 @@ function triggerRetracement(prevPrice, movedPrice) {
 
 // ---- Auto market generator ----
 function generateCandle() {
+  if (!currentPattern) maybeRandomSpike();
   time++;
   const lastPrice = data[data.length - 1].close;
   let newClose;
@@ -330,6 +331,80 @@ function generatePatternCandle() {
 
   // Default drift
   generateCandle();
+}
+
+function maybeRandomSpike() {
+  const chance = 0.05; // 5% chance
+  if (Math.random() < chance) {
+    const lastPrice = data[data.length - 1].close;
+    const delta = lastPrice * 0.10; // 10% of current price
+
+    if (Math.random() < 0.5) {
+      triggerPump(delta);
+    } else {
+      triggerDump(delta);
+    }
+  }
+}
+
+function triggerPump(delta) {
+  const lastPrice = data[data.length - 1].close;
+  const targetPrice = lastPrice + delta;
+
+  time++;
+  const open = lastPrice;
+  const close = targetPrice;
+
+  const baseSpike = Math.max(Math.abs(close - open) * 0.6, getVolatility(lastPrice) * 0.03);
+  const high = close + Math.random() * baseSpike;
+  const low = open - Math.random() * baseSpike * 0.1;
+
+  const newCandle = {
+    time,
+    open,
+    high: Math.max(open, close, high),
+    low: Math.min(open, close, low),
+    close
+  };
+  data.push(newCandle);
+
+  if (Math.abs(targetPrice - lastPrice) >= getRetraceThreshold(lastPrice)) {
+    triggerRetracement(lastPrice, targetPrice);
+  }
+
+  if (data.length > 3000) data.shift();
+  candleSeries.setData(data);
+  updatePriceDisplay();
+}
+
+function triggerDump(delta) {
+  const lastPrice = data[data.length - 1].close;
+  const targetPrice = Math.max(0.00001, lastPrice - delta);
+
+  time++;
+  const open = lastPrice;
+  const close = targetPrice;
+
+  const baseSpike = Math.max(Math.abs(close - open) * 0.6, getVolatility(lastPrice) * 0.03);
+  const high = open + Math.random() * baseSpike * 0.1;
+  const low = close - Math.random() * baseSpike;
+
+  const newCandle = {
+    time,
+    open,
+    high: Math.max(open, close, high),
+    low: Math.min(open, close, Math.max(low, 0.00001)),
+    close
+  };
+  data.push(newCandle);
+
+  if (Math.abs(targetPrice - lastPrice) >= getRetraceThreshold(lastPrice)) {
+    triggerRetracement(lastPrice, targetPrice);
+  }
+
+  if (data.length > 3000) data.shift();
+  candleSeries.setData(data);
+  updatePriceDisplay();
 }
 
 // ---- Start/Stop live market ----
