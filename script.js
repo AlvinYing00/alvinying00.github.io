@@ -1,10 +1,11 @@
-const chart = LightweightCharts.createChart(document.getElementById('chart'), {
-  width: 900,
-  height: 450,
+const chartElement = document.getElementById('chart');
+const chart = LightweightCharts.createChart(chartElement, {
+  width: chartElement.clientWidth,
+  height: chartElement.clientHeight,
   layout: { backgroundColor: '#000000', textColor: '#DDD' },
   grid: { 
     vertLines: { color: 'transparent' }, 
-    horzLines: { color: 'transparent' } 
+    horzLines: { color: 'transparent' }
   },
 });
 
@@ -364,8 +365,5 @@ function toggleMarket() {
 }
 
 window.addEventListener('resize', () => {
-  chart.resize(
-    document.getElementById('chart').clientWidth,
-    document.getElementById('chart').clientHeight
-  );
+  chart.resize(chartElement.clientWidth, chartElement.clientHeight);
 });
