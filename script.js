@@ -28,8 +28,8 @@ let patternCooldown = 0; // countdown in seconds
 let currentTrend = null; // "up" or "down"
 let trendSteps = 0;      // remaining candles in trend
 const TREND_CHANCE = 0.15;   // 15% chance to start a trend when idle
-const TREND_MIN_STEPS = 5;   // minimum candles per trend
-const TREND_MAX_STEPS = 15;  // maximum candles per trend
+const TREND_MIN_STEPS = 25;   // minimum candles per trend
+const TREND_MAX_STEPS = 50;  // maximum candles per trend
 const TREND_VOL_FACTOR = 0.5; // smooth the trend (less randomness)
 
 function scheduleNextPattern() {
