@@ -333,17 +333,26 @@ function generatePatternCandle() {
   generateCandle();
 }
 
+let spikeCooldown = 0; // candles left before next random spike
+
 function maybeRandomSpike() {
+  if (spikeCooldown > 0) {
+    spikeCooldown--;
+    return;
+  }
+
   const chance = 0.05; // 5% chance
   if (Math.random() < chance) {
     const lastPrice = data[data.length - 1].close;
-    const delta = lastPrice * 0.10; // 10% of current price
+    const delta = lastPrice * 0.10; // 10% spike
 
     if (Math.random() < 0.5) {
       triggerPump(delta);
     } else {
       triggerDump(delta);
     }
+
+    spikeCooldown = 100; // prevent another spike for the next 100 candles
   }
 }
 
