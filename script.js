@@ -98,7 +98,7 @@ function getRetraceThreshold(price) {
 
 // ---- Init first candle ----
 function initChart() {
-  const initialPrice = 1 + Math.random() * 9; // random between 1 - 10
+  const initialPrice = 9 + Math.random(); // random between 9 - 10
   const firstCandle = {
     time: ++time,
     open: initialPrice,
