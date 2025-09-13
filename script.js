@@ -196,8 +196,8 @@ function generateCandle() {
   const open = lastPrice;
   const bodyHigh = Math.max(open, newClose);
   const bodyLow = Math.min(open, newClose);
-  const wickTop = bodyHigh + Math.random() * getVolatility(lastPrice) * 0.3;
-  const wickBottom = Math.max(0.01, bodyLow - Math.random() * getVolatility(lastPrice) * 0.3);
+  const wickTop = Math.max(bodyHigh, bodyHigh + Math.random() * getVolatility(lastPrice) * 0.3);
+  const wickBottom = Math.min(bodyLow, Math.max(0.01, bodyLow - Math.random() * getVolatility(lastPrice) * 0.3));
 
   const newCandle = { time, open, high: wickTop, low: wickBottom, close: newClose };
   data.push(newCandle);
