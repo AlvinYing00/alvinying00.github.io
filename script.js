@@ -79,34 +79,20 @@ let nextBigMoveAt = Math.floor(Math.random() * 60) + 60; // between 60–120
 
 function generateCandle() {
   time++;
-  candleCounter++;
   const lastPrice = data[data.length - 1].close;
   let newClose;
 
-  // ---- Auto pump/dump ----
-  if (candleCounter >= nextBigMoveAt) {
-    const bigMove = (Math.random() < 0.5 ? 1 : -1) * (0.5 + Math.random() * 2.0); 
-    newClose = Math.max(0.01, lastPrice + bigMove);
-
-    candleCounter = 0;
-    nextBigMoveAt = Math.floor(Math.random() * 60) + 60; // reset schedule
-
-    console.log(`BIG MOVE: ${bigMove.toFixed(2)}, new price = ${newClose.toFixed(2)}`);
-    triggerRetracement(lastPrice, newClose); // retrace after big move
-  }
-  else {
-    // ---- Normal mode (your existing logic) ----
-    if (retraceTarget !== null && retraceSteps > 0) {
-      const stepSize = (retraceTarget - lastPrice) / retraceSteps;
-      const noise = (Math.random() - 0.5) * Math.abs(stepSize) * 3;
-      newClose = lastPrice + stepSize + noise;
-      retraceSteps--;
-      if (retraceSteps <= 0) retraceTarget = null;
-    } else {
-      const drift = (Math.random() - 0.5) * (Math.random() * 1 + 0.01);
-      newClose = Math.max(0.01, lastPrice + drift);
-      if (Math.abs(drift) >= RETRACE_THRESHOLD) triggerRetracement(lastPrice, newClose);
-    }
+  // ---- Normal + Retracement only ----
+  if (retraceTarget !== null && retraceSteps > 0) {
+    const stepSize = (retraceTarget - lastPrice) / retraceSteps;
+    const noise = (Math.random() - 0.5) * Math.abs(stepSize) * 3;
+    newClose = lastPrice + stepSize + noise;
+    retraceSteps--;
+    if (retraceSteps <= 0) retraceTarget = null;
+  } else {
+    const drift = (Math.random() - 0.5) * (Math.random() * 1 + 0.01);
+    newClose = Math.max(0.01, lastPrice + drift);
+    if (Math.abs(drift) >= RETRACE_THRESHOLD) triggerRetracement(lastPrice, newClose);
   }
 
   // ---- Candle body + wick ----
@@ -167,7 +153,10 @@ function dump() {
   const close = targetPrice;
   const baseSpike = Math.max(Math.abs(close - open) * 0.6, 0.003);
   const high = Math.max(open, close) + Math.random() * baseSpike;
-  const low  = Math.min(open, close) - Math.random() * baseSpike;
+  let low  = Math.min(open, close) - Math.random() * baseSpike;
+
+  // Prevent negative lows
+  low = Math.max(0.01, low);
 
   const newCandle = {
     time: time,
