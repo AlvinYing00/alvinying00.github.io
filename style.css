@@ -16,3 +16,7 @@ button, input {
   font-size: 18px;
   margin: 10px 0;
 }
+
+#priceBar span {
+  display: inline-block;
+}
