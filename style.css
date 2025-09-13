@@ -20,3 +20,8 @@ button, input {
 #priceBar span {
   display: inline-block;
 }
+
+#priceDisplay {
+  font-weight: bold;
+  margin-top: 0;   /* remove the downward push */
+}
