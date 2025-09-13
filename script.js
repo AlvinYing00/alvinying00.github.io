@@ -63,7 +63,7 @@ function updatePriceDisplay() {
   const prev = data[data.length - 2].close;
 
   // Update text
-  priceDisplay.textContent = 'Current: ' + fmt(last);
+  priceDisplay.textContent = fmt(last);
 
   // Color based on price movement
   if (last > prev) {
