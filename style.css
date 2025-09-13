@@ -12,7 +12,7 @@ button, input {
 #priceBar {
   display: flex;
   justify-content: center;
-  gap: 40px;
+  gap: 3em;
   margin-top: 10px;
   font-size: 18px;
 }
