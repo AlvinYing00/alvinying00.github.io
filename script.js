@@ -18,9 +18,9 @@ let marketInterval = null;
 const priceDisplay = document.getElementById('priceDisplay');
 
 // ---- Retracement params ----
-const RETRACE_THRESHOLD = 10;   // trigger only if move >= 10
+const RETRACE_THRESHOLD = 0.5;   // trigger only if move >= 0.5
 const RETRACE_MIN_FRAC = 0.60;   // 60%
-const RETRACE_MAX_FRAC = 0.70;   // 70%
+const RETRACE_MAX_FRAC = 0.80;   // 80%
 
 let retraceTarget = null;
 let retraceSteps = 0; // candles left in retracement
@@ -32,7 +32,7 @@ function fmt(num) {
 
 // ---- Init first candle ----
 function initChart() {
-  const initialPrice = 100 + Math.random() * 900; // random between 100–1000
+  const initialPrice = 10 + Math.random() * 90; // random between 10 - 90
   const firstCandle = {
     time: ++time,
     open: initialPrice,
@@ -75,7 +75,6 @@ function triggerRetracement(prevPrice, movedPrice) {
 
 // ---- Auto market generator ----
 let candleCounter = 0;
-let nextBigMoveAt = Math.floor(Math.random() * 60) + 60; // between 60–120
 
 function generateCandle() {
   time++;
@@ -91,7 +90,7 @@ function generateCandle() {
     if (retraceSteps <= 0) retraceTarget = null;
   } else {
     // Balanced volatility between 0.01 and 0.1
-    const drift = (Math.random() < 0.5 ? -1 : 1) * (0.01 + Math.random() * 0.09);
+    const drift = (Math.random() - 0.5) * 0.1;
     newClose = Math.max(0.01, lastPrice + drift);
     if (Math.abs(drift) >= RETRACE_THRESHOLD) triggerRetracement(lastPrice, newClose);
   }
