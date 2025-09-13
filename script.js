@@ -262,11 +262,9 @@ function pump() {
   // Pump
   const baseSpike = Math.max(Math.abs(close - open) * 0.6, getVolatility(lastPrice) * 0.03);
 
-  // High wick above close
-  const high = close + Math.random() * baseSpike;
-
-  // Low wick = exactly the open (no tail below)
-  const low = open;
+  // Pump
+  const high = close + Math.random() * baseSpike; 
+  const low = Math.min(open, close);  // lowest point = body only, no extra wick
 
   const newCandle = {
     time,
@@ -304,12 +302,9 @@ function dump() {
  // Dump
   const baseSpike = Math.max(Math.abs(close - open) * 0.6, getVolatility(lastPrice) * 0.03);
 
-  // High wick = exactly the open (no tail above)
-  const high = open;
-
-  // Low wick below close
-  const low = Math.max(0.00001, close - Math.random() * baseSpike);
-
+  // Dump
+  const high = Math.max(open, close); // highest point = body only, no extra wick
+  const low = close - Math.random() * baseSpike;
   const newCandle = {
     time,
     open,
