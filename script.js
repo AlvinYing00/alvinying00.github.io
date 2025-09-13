@@ -90,7 +90,8 @@ function generateCandle() {
     retraceSteps--;
     if (retraceSteps <= 0) retraceTarget = null;
   } else {
-    const drift = (Math.random() - 0.5) * (Math.random() * 1 + 0.01);
+    // Balanced volatility between 0.01 and 0.1
+    const drift = (Math.random() < 0.5 ? -1 : 1) * (0.01 + Math.random() * 0.09);
     newClose = Math.max(0.01, lastPrice + drift);
     if (Math.abs(drift) >= RETRACE_THRESHOLD) triggerRetracement(lastPrice, newClose);
   }
