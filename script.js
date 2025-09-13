@@ -170,85 +170,78 @@ function triggerRetracement(prevPrice, movedPrice) {
 }
 
 // ---- Auto market generator ----
+function maybeStartTrend() {
+  if (!currentTrend && Math.random() < TREND_CHANCE) {
+    // 50/50 chance for up or down
+    currentTrend = Math.random() < 0.5 ? "up" : "down";
+    // Trend length (candles) more visible
+    trendSteps = TREND_MIN_STEPS + Math.floor(Math.random() * (TREND_MAX_STEPS - TREND_MIN_STEPS + 1));
+    console.log("Trend started:", currentTrend, "for", trendSteps, "candles");
+  }
+}
+
 function generateCandle() {
   time++;
   const lastPrice = data[data.length - 1].close;
   let newClose;
 
   if (retraceTarget !== null && retraceSteps > 0) {
-    // --- Retracement mode with counter-trend candles ---
+    // Retracement mode (counter-trend)
     const remainingDelta = retraceTarget - lastPrice;
     const baseStep = remainingDelta / retraceSteps;
-    const noiseFactor = Math.abs(baseStep) * 0.6;
+    const noiseFactor = Math.abs(baseStep) * 0.5; // smaller noise to keep trend visible
     let noise = (Math.random() - 0.5) * noiseFactor * 2;
 
-    // ~35% chance to flip the step slightly to create green candles during down retrace
-    const directionFlipChance = 0.35;
-    let step = baseStep + noise;
-    if (step < 0 && Math.random() < directionFlipChance) {
-      step = -step * (0.3 + Math.random() * 0.7); // partial flip
-    } else if (step > 0 && Math.random() < directionFlipChance) {
-      step = -step * (0.3 + Math.random() * 0.7);
+    // Flip chance
+    if ((baseStep < 0 && Math.random() < 0.3) || (baseStep > 0 && Math.random() < 0.3)) {
+      noise = -noise;
     }
 
-    newClose = lastPrice + step;
-
+    newClose = lastPrice + baseStep + noise;
     retraceSteps--;
     if (retraceSteps <= 0) {
-      newClose = retraceTarget; // ensure final candle hits retracement target exactly
+      newClose = retraceTarget;
       retraceTarget = null;
     }
+
   } else if (currentTrend) {
-    // Smooth trend drift
-    const baseVol = getVolatility(lastPrice) * TREND_VOL_FACTOR;
-    const step = baseVol * (currentTrend === "up" ? 1 : -1);
-    const noise = (Math.random() - 0.5) * baseVol * 0.4;
-    newClose = Math.max(0.01, lastPrice + step + noise);
+    // Apply clear trend
+    const trendDirection = currentTrend === "up" ? 1 : -1;
+    const factor = trendDirection === 1 ? TREND_VOL_FACTOR : TREND_VOL_FACTOR * 1.1;
+    const baseStep = getVolatility(lastPrice) * factor;
+    const noise = (Math.random() - 0.5) * baseStep * 0.2; // smaller noise
+    newClose = Math.max(0.01, lastPrice + baseStep * trendDirection + noise);
 
     trendSteps--;
     if (trendSteps <= 0) {
       console.log("Trend ended:", currentTrend);
       currentTrend = null;
     }
+
   } else {
-    // --- Normal drift mode ---
+    // Normal drift
     const baseVol = getVolatility(lastPrice);
     const drift = (Math.random() - 0.5) * baseVol;
     newClose = Math.max(0.01, lastPrice + drift);
 
-    // Trigger retracement if drift exceeds dynamic threshold
     if (Math.abs(drift) >= getRetraceThreshold(lastPrice)) {
       triggerRetracement(lastPrice, newClose);
     }
   }
 
-  // ---- Candle body + wick ----
+  // Candle body + wick
   const open = lastPrice;
   const bodyHigh = Math.max(open, newClose);
   const bodyLow = Math.min(open, newClose);
   const wickTop = Math.max(bodyHigh, bodyHigh + Math.random() * getVolatility(lastPrice) * 0.3);
   const wickBottom = Math.min(bodyLow, Math.max(0.01, bodyLow - Math.random() * getVolatility(lastPrice) * 0.3));
 
-  const newCandle = {
-    time,
-    open,
-    high: Math.max(open, newClose, wickTop),
-    low: Math.min(open, newClose, wickBottom),
-    close: newClose
-  };
+  const newCandle = { time, open, high: Math.max(open, newClose, wickTop), low: Math.min(open, newClose, wickBottom), close: newClose };
   data.push(newCandle);
 
   if (data.length > 3000) data.shift();
   candleSeries.setData(data);
   updatePriceDisplay();
-}
-
-function maybeStartTrend() {
-  if (!currentTrend && Math.random() < TREND_CHANCE) {
-    currentTrend = Math.random() < 0.5 ? "up" : "down";
-    trendSteps = TREND_MIN_STEPS + Math.floor(Math.random() * (TREND_MAX_STEPS - TREND_MIN_STEPS + 1));
-    console.log("Trend started:", currentTrend, "for", trendSteps, "candles");
-  }
 }
 
 // ---- Pump (manual action) ----
