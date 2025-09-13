@@ -109,7 +109,7 @@ function generateCandle() {
   const newCandle = { time, open, high: wickTop, low: wickBottom, close: newClose };
   data.push(newCandle);
 
-  if (data.length > 500) data.shift();
+  if (data.length > 3000) data.shift();
   candleSeries.setData(data);
   updatePriceDisplay();
 }
