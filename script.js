@@ -81,18 +81,22 @@ function generateCandle() {
   const lastPrice = data[data.length - 1].close;
   let newClose;
 
-  // ---- Normal + Retracement only ----
   if (retraceTarget !== null && retraceSteps > 0) {
+    // --- Retracement mode ---
     const stepSize = (retraceTarget - lastPrice) / retraceSteps;
-    const noise = (Math.random() - 0.5) * Math.abs(stepSize) * 3;
+    const noise = (Math.random() - 0.5) * Math.abs(stepSize) * 1.5; // smoother retrace
     newClose = lastPrice + stepSize + noise;
     retraceSteps--;
     if (retraceSteps <= 0) retraceTarget = null;
   } else {
-    // Balanced volatility between 0.01 and 0.1
-    const drift = (Math.random() - 0.5) * 0.1;
+    // --- Normal drift mode ---
+    const baseVol = 0.02 + Math.random() * 0.05; // 0.02–0.07
+    const drift = (Math.random() - 0.5) * baseVol;
     newClose = Math.max(0.01, lastPrice + drift);
-    if (Math.abs(drift) >= RETRACE_THRESHOLD) triggerRetracement(lastPrice, newClose);
+
+    if (Math.abs(drift) >= RETRACE_THRESHOLD) {
+      triggerRetracement(lastPrice, newClose);
+    }
   }
 
   // ---- Candle body + wick ----
@@ -100,10 +104,11 @@ function generateCandle() {
   const bodyHigh = Math.max(open, newClose);
   const bodyLow = Math.min(open, newClose);
   const wickTop = bodyHigh + Math.random() * 0.02;
-  const wickBottom = bodyLow - Math.random() * 0.02;
+  const wickBottom = Math.max(0.01, bodyLow - Math.random() * 0.02);
 
   const newCandle = { time, open, high: wickTop, low: wickBottom, close: newClose };
   data.push(newCandle);
+
   if (data.length > 500) data.shift();
   candleSeries.setData(data);
   updatePriceDisplay();
