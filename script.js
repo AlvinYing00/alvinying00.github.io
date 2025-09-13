@@ -18,7 +18,7 @@ let marketInterval = null;
 const priceDisplay = document.getElementById('priceDisplay');
 
 // ---- Retracement params ----
-const RETRACE_THRESHOLD = 0.1;   // trigger only if move >= 0.1
+const RETRACE_THRESHOLD = 10;   // trigger only if move >= 10
 const RETRACE_MIN_FRAC = 0.60;   // 60%
 const RETRACE_MAX_FRAC = 0.70;   // 70%
 
