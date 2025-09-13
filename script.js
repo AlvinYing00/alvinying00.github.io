@@ -54,6 +54,9 @@ function continuePattern() {
     case "triangle":
       generateTriangleCandle();
     break;
+    case "flag":
+      generateFlagCandle();
+    break;
   default:
     generateCandle();
 }
