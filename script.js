@@ -57,22 +57,37 @@ function initChart() {
 }
 initChart();
 
+let sessionHigh = null;
+let sessionLow = null;
+
 function updatePriceDisplay() {
   if (data.length < 2) return;
   const last = data[data.length - 1].close;
   const prev = data[data.length - 2].close;
 
-  // Update text
+  // Update current price
   priceDisplay.textContent = fmt(last);
 
-  // Color based on price movement
+  // Set color (green/red/neutral)
   if (last > prev) {
-    priceDisplay.style.color = 'limegreen'; // green if price up
+    priceDisplay.style.color = 'limegreen';
   } else if (last < prev) {
-    priceDisplay.style.color = 'red'; // red if price down
+    priceDisplay.style.color = 'red';
   } else {
-    priceDisplay.style.color = '#DDD'; // neutral (no change)
+    priceDisplay.style.color = '#DDD';
   }
+
+  // Track session high/low
+  if (sessionHigh === null || last > sessionHigh) {
+    sessionHigh = last;
+  }
+  if (sessionLow === null || last < sessionLow) {
+    sessionLow = last;
+  }
+
+  // Update high/low display
+  document.getElementById('highDisplay').textContent = fmt(sessionHigh);
+  document.getElementById('lowDisplay').textContent = fmt(sessionLow);
 }
 
 // ---- Utility: trigger retracement ----
