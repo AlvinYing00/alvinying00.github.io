@@ -186,6 +186,28 @@ function generateCandle() {
   const lastPrice = data[data.length - 1].close;
   let newClose;
 
+  // ---- Very rare random spike (0.1% chance per candle) ----
+  if (Math.random() < 0.001) {  // 0.1% = 0.001 probability
+    const spikeDirection = Math.random() < 0.5 ? -1 : 1; // dump or pump
+    const spikeAmount = lastPrice * 0.10 * spikeDirection; // ±10%
+    newClose = Math.max(0.00001, lastPrice + spikeAmount);
+
+    console.log("💥 SPIKE triggered!", spikeDirection > 0 ? "PUMP" : "DUMP", "to", newClose.toFixed(2));
+
+    const open = lastPrice;
+    const close = newClose;
+    const high = spikeDirection > 0 ? newClose : Math.max(open, close);
+    const low = spikeDirection < 0 ? newClose : Math.min(open, close);
+
+    const spikeCandle = { time, open, high, low, close };
+    data.push(spikeCandle);
+
+    if (data.length > 3000) data.shift();
+    candleSeries.setData(data);
+    updatePriceDisplay();
+    return; // 🚨 stop here so normal candle logic doesn’t overwrite spike
+  }
+
   if (retraceTarget !== null && retraceSteps > 0) {
     // Retracement mode (counter-trend)
     const remainingDelta = retraceTarget - lastPrice;
