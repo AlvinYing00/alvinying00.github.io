@@ -28,12 +28,10 @@ let patternQueue = [];
 let patternCooldown = 0; // countdown in seconds
 
 function scheduleNextPattern() {
-  const patterns = ["doubleTop", "headShoulders", "triangle", "flag", "wedge"];
+  const patterns = ["doubleTop", "doubleBottom", "headShoulders", "triangle", "flag", "wedge"];
   const choice = patterns[Math.floor(Math.random() * patterns.length)];
-
   patternQueue.push(choice);
-  patternCooldown = 120; // wait 120 seconds before new pattern
-  console.log("Next pattern scheduled:", choice);
+  patternCooldown = 120;
 }
 
 function startPattern(name) {
@@ -88,12 +86,61 @@ function generateDoubleTopCandle() {
   updatePriceDisplay();
 }
 
+// ---- Double Bottom Pattern ----
+function generateDoubleBottomCandle() {
+  if (!currentPattern) return;
+
+  const lastPrice = data[data.length - 1].close;
+  const totalSteps = currentPattern.totalSteps;
+  const step = currentPattern.totalSteps - currentPattern.steps;
+
+  let newClose = lastPrice;
+
+  // --- PHASES ---
+  if (step < totalSteps * 0.2) {
+    // Phase 1: Impulse Down
+    newClose = lastPrice - getVolatility(lastPrice) * 1.5;
+  } else if (step < totalSteps * 0.35) {
+    // Phase 2: First Bottom (flat-ish)
+    newClose = lastPrice + (Math.random() - 0.5) * getVolatility(lastPrice) * 0.2;
+  } else if (step < totalSteps * 0.55) {
+    // Phase 3: Pullback (bounce up)
+    newClose = lastPrice + getVolatility(lastPrice) * 0.8;
+  } else if (step < totalSteps * 0.75) {
+    // Phase 4: Second Bottom (near first bottom)
+    if (!currentPattern.firstBottomPrice) currentPattern.firstBottomPrice = sessionLow || lastPrice;
+    const target = currentPattern.firstBottomPrice;
+    newClose = lastPrice - (lastPrice - target) * 0.3 + (Math.random() - 0.5) * getVolatility(lastPrice) * 0.2;
+  } else {
+    // Phase 5: Breakout Up
+    newClose = lastPrice + getVolatility(lastPrice) * 1.2;
+  }
+
+  // ---- Candle body + wick ----
+  time++;
+  const open = lastPrice;
+  const bodyHigh = Math.max(open, newClose);
+  const bodyLow = Math.min(open, newClose);
+  const wickTop = bodyHigh + Math.random() * getVolatility(lastPrice) * 0.3;
+  const wickBottom = Math.max(0.01, bodyLow - Math.random() * getVolatility(lastPrice) * 0.3);
+
+  const newCandle = { time, open, high: wickTop, low: wickBottom, close: newClose };
+  data.push(newCandle);
+
+  if (data.length > 3000) data.shift();
+  candleSeries.setData(data);
+  updatePriceDisplay();
+}
+
 function continuePattern() {
   if (!currentPattern) return;
 
   switch (currentPattern.name) {
     case "doubleTop":
       generateDoubleTopCandle();
+      break;
+    case "doubleBottom":
+      generateDoubleBottomCandle();
       break;
     default:
       generateCandle();
