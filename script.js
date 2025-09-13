@@ -1,4 +1,3 @@
-// ---- Chart setup ----
 const chart = LightweightCharts.createChart(document.getElementById('chart'), {
   width: 900,
   height: 450,
