@@ -11,8 +11,9 @@ button, input {
 
 #priceBar {
   display: flex;
-  justify-content: center;   /* center all items */
-  gap: 2em;                  /* space between each */
+  justify-content: center;
+  align-items: baseline;  /* aligns text bottoms */
+  gap: 2em;
   font-size: 18px;
 }
 
