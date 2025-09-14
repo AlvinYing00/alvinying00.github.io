@@ -28,8 +28,39 @@
   <button onclick="pump()">Pump</button>
   <button onclick="dump()">Dump</button>
 
+  <div style="background:#111; color:#ddd; padding:10px; margin-top:15px;">
+  <h3>Trading Dashboard</h3>
+  <p>Balance: $<span id="balance">100.00</span></p>
+
+  <h4>Open Positions</h4>
+  <table border="1" cellpadding="5" style="width:100%; border-collapse:collapse; color:#ddd;">
+    <thead>
+      <tr>
+        <th>ID</th><th>Type</th><th>Entry</th><th>Current</th><th>P/L</th><th>Action</th>
+      </tr>
+    </thead>
+    <tbody id="openPositions"></tbody>
+  </table>
+
+  <h4>Trade History</h4>
+  <table border="1" cellpadding="5" style="width:100%; border-collapse:collapse; color:#ddd;">
+    <thead>
+      <tr>
+        <th>ID</th><th>Type</th><th>Entry</th><th>Exit</th><th>P/L</th><th>Closed At</th>
+      </tr>
+    </thead>
+    <tbody id="tradeHistory"></tbody>
+  </table>
+</div>
+
+<div style="margin-top:10px;">
+  <button onclick="placeBuy()">Buy</button>
+  <button onclick="placeSell()">Sell</button>
+</div>
+
   <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
   <script src="script.js"></script>
   <script src="patterns.js"></script>
+  <script src="trade.js"></script>
 </body>
 </html>
