@@ -96,6 +96,11 @@ function updateFloatingPL() {
 
 // ---- Render Dashboard ----
 function renderTables() {
+  if (data.length < 1) return;
+
+  // Always recalc floating P/L first
+  updateFloatingPL();
+
   // Update balance
   balanceDisplay.textContent = balance.toFixed(2);
 
@@ -135,9 +140,8 @@ function renderTables() {
 // Hook into your chart price updater
 const oldUpdatePriceDisplay = updatePriceDisplay;
 updatePriceDisplay = function () {
-  oldUpdatePriceDisplay(); // update price + session high/low
-  updateFloatingPL();      // recalc open P/L first
-  renderTables();          // then update dashboard with latest values
+  oldUpdatePriceDisplay(); // keep chart updates
+  renderTables();          // tables now always use updated P/L
 };
 
 // Expose functions globally
