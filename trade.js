@@ -1,7 +1,7 @@
 // trade.js
 let positions = []; // Active and closed trades
 let orderId = 1;
-let balance = 1.00;
+let balance = 100.00;
 
 // Elements
 const balanceDisplay = document.getElementById("balance");
