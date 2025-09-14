@@ -124,6 +124,10 @@ function updatePriceDisplay() {
   const last = lastCandle.close;
   const prev = prevCandle.close;
 
+  if (window.renderTables) {
+        window.renderTables();
+  }
+
   // Update current price
   priceDisplay.textContent = fmt(last);
 
