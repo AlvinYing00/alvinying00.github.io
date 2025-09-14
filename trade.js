@@ -199,3 +199,6 @@ window.placeBuy = placeBuy;
 window.placeSell = placeSell;
 window.closeTrade = closeTrade;
 window.renderTables = renderTables;
+
+// Initial sync balance -> HTML
+balanceDisplay.textContent = balance.toFixed(2);
