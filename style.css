@@ -28,3 +28,12 @@ html, body {
   width: 100%;
   height: 70vh; /* 70% browser height */
 }
+
+.profit {
+  color: limegreen;
+  font-weight: bold;
+}
+.loss {
+  color: red;
+  font-weight: bold;
+}
