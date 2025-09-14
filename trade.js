@@ -75,6 +75,24 @@ function closeTrade(id) {
   renderTables();
 }
 
+// ---- Update floating P/L for open trades ----
+function updateFloatingPL() {
+  const lastPrice = data[data.length - 1].close;
+  positions.forEach(trade => {
+    if (!trade.open) return;
+
+    let currentExit;
+    if (trade.type === "BUY") {
+      currentExit = lastPrice - SPREAD; // if closed now
+      trade.profit = (currentExit - trade.entry) * trade.size;
+    } else {
+      currentExit = lastPrice + SPREAD;
+      trade.profit = (trade.entry - currentExit) * trade.size;
+    }
+  });
+  renderTables();
+}
+
 // ---- Render Dashboard ----
 function renderTables() {
   // Update balance
@@ -84,12 +102,13 @@ function renderTables() {
   openTable.innerHTML = "";
   positions.filter(p => p.open).forEach(trade => {
     const row = document.createElement("tr");
+    const color = trade.profit >= 0 ? "limegreen" : "red";
     row.innerHTML = `
       <td>#${trade.id}</td>
       <td>${trade.type}</td>
       <td>${trade.entry.toFixed(2)}</td>
       <td>${data[data.length - 1].close.toFixed(2)}</td>
-      <td>${trade.profit.toFixed(2)}</td>
+      <td style="color:${color}; font-weight:bold;">${trade.profit.toFixed(2)}</td>
       <td><button onclick="closeTrade(${trade.id})">Close</button></td>
     `;
     openTable.appendChild(row);
@@ -98,18 +117,26 @@ function renderTables() {
   // Trade history
   historyTable.innerHTML = "";
   positions.filter(p => !p.open).forEach(trade => {
+    const color = trade.profit >= 0 ? "limegreen" : "red";
     const row = document.createElement("tr");
     row.innerHTML = `
       <td>#${trade.id}</td>
       <td>${trade.type}</td>
       <td>${trade.entry.toFixed(2)}</td>
       <td>${trade.exit.toFixed(2)}</td>
-      <td>${trade.profit.toFixed(2)}</td>
+      <td style="color:${color}; font-weight:bold;">${trade.profit.toFixed(2)}</td>
       <td>${trade.closedAt}</td>
     `;
     historyTable.appendChild(row);
   });
 }
+
+// Hook into your chart price updater
+const oldUpdatePriceDisplay = updatePriceDisplay;
+updatePriceDisplay = function () {
+  oldUpdatePriceDisplay(); // keep original functionality
+  updateFloatingPL();      // also update floating P/L
+};
 
 // Expose functions globally
 window.placeBuy = placeBuy;
