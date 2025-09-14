@@ -142,3 +142,4 @@ function renderTables() {
 window.placeBuy = placeBuy;
 window.placeSell = placeSell;
 window.closeTrade = closeTrade;
+window.renderTables = renderTables;
