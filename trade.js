@@ -25,7 +25,7 @@ function isMarketOpen() { return marketOpen; }
 
 // ---- Place Orders ----
 function placeBuy() {
-  if (!marketOpen) return alert("Market is closed! Cannot place BUY order.");
+  if (!isMarketOpen()) return alert("Market is closed! Cannot place BUY order.");
   if (balance <= 0) return alert("Insufficient funds! Balance is 0.");
   if (!data || data.length < 1) return alert("No market data available.");
 
@@ -48,7 +48,7 @@ function placeBuy() {
 }
 
 function placeSell() {
-  if (!marketOpen) return alert("Market is closed! Cannot place SELL order.");
+  if (!isMarketOpen()) return alert("Market is closed! Cannot place SELL order.");
   if (balance <= 0) return alert("Insufficient funds! Balance is 0.");
   if (!data || data.length < 1) return alert("No market data available.");
 
