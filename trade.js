@@ -158,13 +158,22 @@ function renderTables() {
 
   updateFloatingPL(); // update floating P/L
 
-  // Effective balance = actual balance + sum of floating P/L
+  // Calculate floating P/L
   const floatingPL = positions
     .filter(p => p.open)
     .reduce((sum, p) => sum + p.profit, 0);
 
   const effectiveBalance = balance + floatingPL;
   balanceDisplay.textContent = effectiveBalance.toFixed(2);
+
+  // --- Set balance color based on floating P/L ---
+  if (floatingPL > 0) {
+    balanceDisplay.style.color = "limegreen"; // profit
+  } else if (floatingPL < 0) {
+    balanceDisplay.style.color = "red"; // loss
+  } else {
+    balanceDisplay.style.color = "black"; // no floating P/L
+  }
 
   // Open trades
   openTable.innerHTML = "";
