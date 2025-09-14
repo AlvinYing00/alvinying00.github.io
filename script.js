@@ -375,7 +375,7 @@ function generatePatternCandle() {
   generateCandle();
 }
 
-// ---- Start/Stop live market ----
+// Start/Stop live market
 function toggleMarket() {
   if (marketInterval) {
     clearInterval(marketInterval);
