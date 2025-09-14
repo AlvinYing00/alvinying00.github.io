@@ -14,6 +14,8 @@ function getSpread(price) {
 }
 
 let marketOpen = true; // default open
+setMarketOpen(false); // to stop trading
+setMarketOpen(true);  // to reopen
 
 // Public setter
 function setMarketOpen(state) {
@@ -120,7 +122,6 @@ function forceCloseAll() {
   });
 
   balance = 0.00; // reset balance to 0
-  alert("Margin call! All trades closed. Balance is 0.00");
   renderTables();
 }
 
@@ -157,6 +158,10 @@ function renderTables() {
   if (!data || data.length < 1) return;
 
   updateFloatingPL(); // update floating P/L for open trades
+
+  // Disable buttons if market closed
+  document.getElementById("buyBtn").disabled = !marketOpen;
+  document.getElementById("sellBtn").disabled = !marketOpen;
 
   // Calculate floating P/L only for open trades
   const floatingPL = positions
