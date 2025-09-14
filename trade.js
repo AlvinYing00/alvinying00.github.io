@@ -138,13 +138,6 @@ function renderTables() {
   });
 }
 
-// Hook into your chart price updater
-const oldUpdatePriceDisplay = updatePriceDisplay;
-updatePriceDisplay = function () {
-  oldUpdatePriceDisplay(); // keep chart updates
-  renderTables();          // tables now always use updated P/L
-};
-
 // Expose functions globally
 window.placeBuy = placeBuy;
 window.placeSell = placeSell;
