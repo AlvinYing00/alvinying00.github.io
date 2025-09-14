@@ -156,8 +156,15 @@ function updateFloatingPL() {
 function renderTables() {
   if (!data || data.length < 1) return;
 
-  updateFloatingPL();
-  balanceDisplay.textContent = balance.toFixed(2);
+  updateFloatingPL(); // update floating P/L
+
+  // Effective balance = actual balance + sum of floating P/L
+  const floatingPL = positions
+    .filter(p => p.open)
+    .reduce((sum, p) => sum + p.profit, 0);
+
+  const effectiveBalance = balance + floatingPL;
+  balanceDisplay.textContent = effectiveBalance.toFixed(2);
 
   // Open trades
   openTable.innerHTML = "";
