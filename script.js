@@ -381,9 +381,19 @@ function toggleMarket() {
     clearInterval(marketInterval);
     marketInterval = null;
     console.log('Market stopped.');
+
+    // Inform trade.js that market is closed (if it's loaded)
+    if (typeof window.setMarketOpen === "function") {
+      window.setMarketOpen(false);
+    }
   } else {
     marketInterval = setInterval(generatePatternCandle, 1000);
     console.log('Market started.');
+
+    // Inform trade.js that market is open (if it's loaded)
+    if (typeof window.setMarketOpen === "function") {
+      window.setMarketOpen(true);
+    }
   }
 }
 
