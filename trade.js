@@ -156,26 +156,31 @@ function updateFloatingPL() {
 function renderTables() {
   if (!data || data.length < 1) return;
 
-  updateFloatingPL(); // update floating P/L
+  updateFloatingPL(); // update floating P/L for open trades
 
-  // Calculate floating P/L
+  // Calculate floating P/L only for open trades
   const floatingPL = positions
     .filter(p => p.open)
     .reduce((sum, p) => sum + p.profit, 0);
 
-  const effectiveBalance = balance + floatingPL;
+  const effectiveBalance = balance + floatingPL; // balance + floating P/L
   balanceDisplay.textContent = effectiveBalance.toFixed(2);
 
-  // --- Set balance color based on floating P/L ---
-  if (floatingPL > 0) {
-    balanceDisplay.style.color = "limegreen"; // profit
-  } else if (floatingPL < 0) {
-    balanceDisplay.style.color = "red"; // loss
+  // Set color dynamically
+  if (positions.some(p => p.open)) {
+    if (floatingPL > 0) {
+      balanceDisplay.style.color = "limegreen";
+    } else if (floatingPL < 0) {
+      balanceDisplay.style.color = "red";
+    } else {
+      balanceDisplay.style.color = "white";
+    }
   } else {
-    balanceDisplay.style.color = "black"; // no floating P/L
+    // No open trades → black
+    balanceDisplay.style.color = "white";
   }
 
-  // Open trades
+  // Render Open Trades
   openTable.innerHTML = "";
   positions.filter(p => p.open).forEach(trade => {
     const profitClass = trade.profit >= 0 ? "profit" : "loss";
@@ -191,7 +196,7 @@ function renderTables() {
     openTable.appendChild(row);
   });
 
-  // Trade history
+  // Render Trade History
   historyTable.innerHTML = "";
   positions.filter(p => !p.open).forEach(trade => {
     const profitClass = trade.profit >= 0 ? "profit" : "loss";
