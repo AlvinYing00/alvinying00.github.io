@@ -1,32 +1,43 @@
 // trade.js
-
 let positions = []; // Active and closed trades
 let orderId = 1;
 const SPREAD = 0.20;
 let balance = 100.00;
 
-// Elements
+// Elements (make sure these exist in DOM)
 const balanceDisplay = document.getElementById("balance");
 const openTable = document.getElementById("openPositions");
 const historyTable = document.getElementById("tradeHistory");
 
+// Dynamic spread helper
 function getSpread(price) {
-  return Math.max(0.01, price * 0.002); // e.g. 0.2% of price, min 0.01
+  return Math.max(0.01, price * 0.002); // 0.2% of price, min 0.01
 }
 
+// market state used by trade.js
 let marketOpen = true; // default open
 
-function toggleMarket(state) {
-  marketOpen = state;
-  console.log("Market is now " + (marketOpen ? "OPEN" : "CLOSED"));
+// Public setter (do NOT name this `toggleMarket` or you'll clash with script.js)
+function setMarketOpen(state) {
+  marketOpen = !!state;
+  console.log("Trade module: marketOpen =", marketOpen);
+  // update UI immediately so user sees closed/open state
+  if (typeof renderTables === "function") renderTables();
+}
+
+// convenience getter
+function isMarketOpen() {
+  return marketOpen;
 }
 
 // ---- Place Orders ----
 function placeBuy() {
   if (!marketOpen) return alert("Market is closed! Cannot place BUY order.");
 
+  if (!data || data.length < 1) return alert("No market data available.");
+
   const lastPrice = data[data.length - 1].close;
-  const spread = Math.max(0.01, lastPrice * 0.002);
+  const spread = getSpread(lastPrice);
   const entry = lastPrice + spread;
 
   const trade = {
@@ -46,8 +57,10 @@ function placeBuy() {
 function placeSell() {
   if (!marketOpen) return alert("Market is closed! Cannot place SELL order.");
 
+  if (!data || data.length < 1) return alert("No market data available.");
+
   const lastPrice = data[data.length - 1].close;
-  const spread = Math.max(0.01, lastPrice * 0.002);
+  const spread = getSpread(lastPrice);
   const entry = Math.max(0.01, lastPrice - spread);
 
   const trade = {
@@ -63,6 +76,7 @@ function placeSell() {
   positions.push(trade);
   renderTables();
 }
+
 // ---- Close Trade ----
 function closeTrade(id) {
   const trade = positions.find(t => t.id === id && t.open);
@@ -91,18 +105,18 @@ function closeTrade(id) {
 
 // ---- Update floating P/L for open trades ----
 function updateFloatingPL() {
-  if (data.length < 1) return;
+  if (!data || data.length < 1) return;
   const lastPrice = data[data.length - 1].close;
+  const spread = getSpread(lastPrice);
 
   positions.forEach(trade => {
     if (!trade.open) return;
 
-    let currentExit;
     if (trade.type === "BUY") {
-      currentExit = lastPrice - SPREAD; // if closed now
+      const currentExit = lastPrice - spread;
       trade.profit = (currentExit - trade.entry) * trade.size;
     } else {
-      currentExit = lastPrice + SPREAD;
+      const currentExit = lastPrice + spread;
       trade.profit = (trade.entry - currentExit) * trade.size;
     }
   });
@@ -110,7 +124,7 @@ function updateFloatingPL() {
 
 // ---- Render Dashboard ----
 function renderTables() {
-  if (data.length < 1) return;
+  if (!data || data.length < 1) return;
 
   updateFloatingPL(); // keep P/L fresh
   balanceDisplay.textContent = balance.toFixed(2);
@@ -148,7 +162,11 @@ function renderTables() {
   });
 }
 
-// Expose functions globally
+// Export small API so script.js can inform trade module about market state
+window.setMarketOpen = setMarketOpen;
+window.isMarketOpen = isMarketOpen;
+
+// Expose trade functions globally (so your HTML buttons can call them)
 window.placeBuy = placeBuy;
 window.placeSell = placeSell;
 window.closeTrade = closeTrade;
