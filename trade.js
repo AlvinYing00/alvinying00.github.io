@@ -14,10 +14,19 @@ function getSpread(price) {
   return Math.max(0.01, price * 0.002); // e.g. 0.2% of price, min 0.01
 }
 
+let marketOpen = true; // default open
+
+function toggleMarket(state) {
+  marketOpen = state;
+  console.log("Market is now " + (marketOpen ? "OPEN" : "CLOSED"));
+}
+
 // ---- Place Orders ----
 function placeBuy() {
+  if (!marketOpen) return alert("Market is closed! Cannot place BUY order.");
+
   const lastPrice = data[data.length - 1].close;
-  const spread = getSpread(lastPrice);
+  const spread = Math.max(0.01, lastPrice * 0.002);
   const entry = lastPrice + spread;
 
   const trade = {
@@ -35,8 +44,10 @@ function placeBuy() {
 }
 
 function placeSell() {
+  if (!marketOpen) return alert("Market is closed! Cannot place SELL order.");
+
   const lastPrice = data[data.length - 1].close;
-  const spread = getSpread(lastPrice);
+  const spread = Math.max(0.01, lastPrice * 0.002);
   const entry = Math.max(0.01, lastPrice - spread);
 
   const trade = {
@@ -52,7 +63,6 @@ function placeSell() {
   positions.push(trade);
   renderTables();
 }
-
 // ---- Close Trade ----
 function closeTrade(id) {
   const trade = positions.find(t => t.id === id && t.open);
