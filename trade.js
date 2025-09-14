@@ -77,7 +77,9 @@ function closeTrade(id) {
 
 // ---- Update floating P/L for open trades ----
 function updateFloatingPL() {
+  if (data.length < 1) return;
   const lastPrice = data[data.length - 1].close;
+
   positions.forEach(trade => {
     if (!trade.open) return;
 
@@ -90,7 +92,6 @@ function updateFloatingPL() {
       trade.profit = (trade.entry - currentExit) * trade.size;
     }
   });
-  renderTables();
 }
 
 // ---- Render Dashboard ----
@@ -134,8 +135,9 @@ function renderTables() {
 // Hook into your chart price updater
 const oldUpdatePriceDisplay = updatePriceDisplay;
 updatePriceDisplay = function () {
-  oldUpdatePriceDisplay(); // keep original functionality
-  updateFloatingPL();      // also update floating P/L
+  oldUpdatePriceDisplay(); // update price + session high/low
+  updateFloatingPL();      // recalc open P/L first
+  renderTables();          // then update dashboard with latest values
 };
 
 // Expose functions globally
