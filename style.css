@@ -17,6 +17,14 @@ button, input {
   font-size: 16px;
 }
 
+#priceBar1 {
+  display: flex;
+  justify-content: center; /* center the whole bar */
+  gap: 80px;              /* space between Current, High, Low */
+  margin-top: 10px;
+  font-size: 16px;
+}
+
 html, body {
   margin: 0;
   padding: 0;
