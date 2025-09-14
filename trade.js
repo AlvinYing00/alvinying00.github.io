@@ -10,19 +10,12 @@ const balanceDisplay = document.getElementById("balance");
 const openTable = document.getElementById("openPositions");
 const historyTable = document.getElementById("tradeHistory");
 
-let marketOpen = true; // default open
-
-function toggleMarket(state) {
-  marketOpen = state;
-}
-
 function getSpread(price) {
   return Math.max(0.01, price * 0.002); // e.g. 0.2% of price, min 0.01
 }
 
 // ---- Place Orders ----
 function placeBuy() {
-  if (!marketOpen || data.length < 1) return alert("Market is closed!");
   const lastPrice = data[data.length - 1].close;
   const spread = getSpread(lastPrice);
   const entry = lastPrice + spread;
@@ -42,7 +35,6 @@ function placeBuy() {
 }
 
 function placeSell() {
-  if (!marketOpen || data.length < 1) return alert("Market is closed!");
   const lastPrice = data[data.length - 1].close;
   const spread = getSpread(lastPrice);
   const entry = Math.max(0.01, lastPrice - spread);
