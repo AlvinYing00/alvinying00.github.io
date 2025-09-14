@@ -83,12 +83,13 @@ function closeTrade(id) {
   if (!trade) return;
 
   const lastPrice = data[data.length - 1].close;
+  const spread = getSpread(lastPrice); // ✅ use dynamic spread
   let exit;
 
   if (trade.type === "BUY") {
-    exit = lastPrice - SPREAD; // Close buy at Bid
+    exit = lastPrice - spread; // Close buy at Bid
   } else {
-    exit = lastPrice + SPREAD; // Close sell at Ask
+    exit = lastPrice + spread; // Close sell at Ask
   }
 
   trade.exit = exit;
