@@ -85,10 +85,27 @@ function fmt(num) {
 }
 
 // ---- Dynamic volatility & retrace threshold ----
+let smoothedVol = null;
+
 function getVolatility(price) {
-  const magnitude = Math.floor(Math.log10(price));
-  const base = 0.01 * Math.pow(10, magnitude);
-  return base + Math.random() * base * 7; // scales from base → base*8
+  // Target range at price ≈ 9.00
+  const MIN_MOVE = price * 0.0055;   // ~0.05 at 9
+  const MAX_MOVE = price * 0.105;    // ~0.95 at 9
+
+  // Heavy-tail distribution (bias toward small moves)
+  const r = Math.random();
+  const skewed = Math.pow(r, 2.5); // higher = rarer big moves
+
+  const rawVol = MIN_MOVE + (MAX_MOVE - MIN_MOVE) * skewed;
+
+  // Smooth volatility regime
+  if (smoothedVol === null) {
+    smoothedVol = rawVol;
+  } else {
+    smoothedVol = smoothedVol * 0.8 + rawVol * 0.2;
+  }
+
+  return smoothedVol;
 }
 
 function getRetraceThreshold(price) {
@@ -306,7 +323,7 @@ function pump() {
     triggerRetracement(lastPrice, targetPrice);
   }
 
-  if (data.length > 3000) data.shift();
+  if (data.length > 10000) data.shift();
   candleSeries.setData(data);
   updatePriceDisplay();
 }
