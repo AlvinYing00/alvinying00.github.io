@@ -208,7 +208,7 @@ function generateCandle() {
   let newClose;
 
   // ---- Very rare random spike (0.1% chance per candle) ----
-  if (Math.random() < 0.5) {  // 0.1% = 0.001 probability
+  if (Math.random() < 0.001) {  // 0.1% = 0.001 probability
     const spikeDirection = Math.random() < 0.5 ? -1 : 1; // dump or pump
     const spikePct = 0.15 + Math.random() * 0.15; // 15%–30%
     const spikeAmount = lastPrice * spikePct * spikeDirection;
