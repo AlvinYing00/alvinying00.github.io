@@ -1,14 +1,9 @@
-const chartElement = document.getElementById('chart');
-const chart = LightweightCharts.createChart(chartElement, {
-  width: chartElement.clientWidth === 0,
-  height: chartElement.clientHeight === 0,
-  layout: { backgroundColor: '#000000', textColor: '#DDD' },
-  grid: { 
-    vertLines: { color: 'transparent' }, 
-    horzLines: { color: 'transparent' }
-  },
-});
-
+const chartElement = document.getElementById('chart'); 
+const chart = LightweightCharts.createChart(
+  chartElement, { width: chartElement.clientWidth, height: chartElement.clientHeight, 
+                 layout: { backgroundColor: '#000000', textColor: '#DDD' }, 
+                 grid: { vertLines: { color: 'transparent' }, 
+                horzLines: { color: 'transparent' } }, });
 const candleSeries = chart.addCandlestickSeries();
 
 let data = [];
