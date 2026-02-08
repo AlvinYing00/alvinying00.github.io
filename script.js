@@ -1,32 +1,3 @@
-const VOLATILITY_PRESETS = {
-  LOW: {
-    label: "Low",
-    startBalance: 100,
-    priceMin: 9,
-    priceMax: 10,
-  },
-  MEDIUM: {
-    label: "Medium",
-    startBalance: 500,
-    priceMin: 90,
-    priceMax: 100,
-  },
-  HIGH: {
-    label: "High",
-    startBalance: 1000,
-    priceMin: 900,
-    priceMax: 1000,
-  },
-  ULTRA: {
-    label: "Ultra",
-    startBalance: 10000,
-    priceMin: 9000,
-    priceMax: 10000,
-  }
-};
-
-let currentPreset = VOLATILITY_PRESETS.LOW;
-
 const chartElement = document.getElementById('chart');
 const chart = LightweightCharts.createChart(chartElement, {
   width: chartElement.clientWidth === 0,
@@ -143,50 +114,15 @@ function getRetraceThreshold(price) {
 }
 
 // ---- Init first candle ----
-function initChartWithPreset(presetKey = "LOW") {
-  const preset = VOLATILITY_PRESETS[presetKey];
-  currentPreset = preset;
+function initChart() { 
+  const initialPrice = 9 + Math.random(); // random between 9 - 10 
+  const firstCandle = { time: ++time, open: initialPrice, high: initialPrice + 0.0010, low: initialPrice - 0.0010, close: initialPrice, }; 
+  data.push(firstCandle); 
+  candleSeries.setData(data); 
+  updatePriceDisplay(); 
+} 
 
-  // --- Reset market state ---
-  data = [];
-  time = 0;
-  smoothedVol = null;
-  retraceTarget = null;
-  retraceSteps = 0;
-  currentPattern = null;
-  patternQueue = [];
-  patternCooldown = 0;
-  currentTrend = null;
-  trendSteps = 0;
-  sessionHigh = null;
-  sessionLow = null;
-
-  // --- Set starting price ---
-  const initialPrice =
-    preset.priceMin +
-    Math.random() * (preset.priceMax - preset.priceMin);
-
-  const firstCandle = {
-    time: ++time,
-    open: initialPrice,
-    high: initialPrice,
-    low: initialPrice,
-    close: initialPrice,
-  };
-
-  data.push(firstCandle);
-  candleSeries.setData(data);
-  updatePriceDisplay();
-
-  // --- Sync trade engine ---
-  if (typeof window.resetTradingState === "function") {
-    window.resetTradingState(preset.startBalance);
-  }
-}
-
-initChartWithPreset("LOW");
-toggleMarket(); // start generating candles
-
+initChart();
 
 let sessionHigh = null;
 let sessionLow = null;
