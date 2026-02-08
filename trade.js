@@ -25,6 +25,16 @@ function setMarketOpen(state) {
 }
 function isMarketOpen() { return marketOpen; }
 
+function resetTradingState(startBalance) {
+  positions.length = 0;
+  orderId = 1;
+  balance = startBalance;
+  balanceDisplay.textContent = balance.toFixed(2);
+  renderTables();
+}
+
+window.resetTradingState = resetTradingState;
+
 // ---- Place Orders ----
 function placeBuy() {
   if (!isMarketOpen()) return alert("Market is closed! Cannot place BUY order.");
