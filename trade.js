@@ -10,7 +10,7 @@ const historyTable = document.getElementById("tradeHistory");
 
 // Spread helper (dynamic)
 function getSpread(price) {
-  return Math.max(0.01, price * 0.002); // 0.2% of price, min 0.01
+  return Math.min(price * 0.002, price * 0.01); // cap at 1%
 }
 
 let marketOpen = true; // default open
