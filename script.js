@@ -29,8 +29,8 @@ let currentPreset = VOLATILITY_PRESETS.LOW;
 
 const chartElement = document.getElementById('chart');
 const chart = LightweightCharts.createChart(chartElement, {
-  width: chartElement.clientWidth,
-  height: chartElement.clientHeight,
+  width: chartElement.clientWidth === 0,
+  height: chartElement.clientHeight === 0,
   layout: { backgroundColor: '#000000', textColor: '#DDD' },
   grid: { 
     vertLines: { color: 'transparent' }, 
@@ -185,6 +185,8 @@ function initChartWithPreset(presetKey = "LOW") {
 }
 
 initChartWithPreset("LOW");
+toggleMarket(); // start generating candles
+
 
 let sessionHigh = null;
 let sessionLow = null;
