@@ -324,7 +324,7 @@ function pump() {
     triggerRetracement(lastPrice, targetPrice);
   }
 
-  if (data.length > 10000) data.shift();
+  if (data.length > 3000) data.shift();
   candleSeries.setData(data);
   updatePriceDisplay();
 }
