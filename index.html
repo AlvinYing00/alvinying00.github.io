@@ -22,6 +22,15 @@
 
   <br>
 
+  <select onchange="initChartWithPreset(this.value)">
+    <option value="LOW">Volatility: Low</option>
+    <option value="MEDIUM">Volatility: Medium</option>
+    <option value="HIGH">Volatility: High</option>
+    <option value="ULTRA">Volatility: Ultra</option>
+  </select>
+
+  <br>
+
   <div id = "priceBar">
     <button onclick="toggleMarket()">Start / Stop Market</button><br><br>
     <input id="priceInput" type="number" step="0.00001" placeholder="Enter Delta (e.g. 0.01)">
