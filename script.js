@@ -77,7 +77,6 @@ function initFirstCandle(minPrice, maxPrice) {
     sessionHigh = firstCandle.high;
     sessionLow = firstCandle.low;
     updatePriceDisplay();
-    chart.timeScale().fitContent();
 }
 
 // ---- PRICE DISPLAY ----
