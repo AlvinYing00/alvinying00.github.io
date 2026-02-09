@@ -35,6 +35,8 @@ const volatilityConfig = {
   ultra: { priceMin: 9000,  priceMax: 10000,  balance: 10000 }
 };
 
+let currentVolatility = 'low';
+
 function scheduleNextPattern() {
   const patterns = ["doubleTop", "doubleBottom", "headShoulders", "triangle", "flag", "wedge"];
   const choice = patterns[Math.floor(Math.random() * patterns.length)];
@@ -456,22 +458,23 @@ function applyVolatility(level) {
     initChart(cfg.priceMin, cfg.priceMax);
 }
 
-// Set dropdown to current volatility
-// ---- VOLATILITY ----
-const volatilitySelect = document.getElementById('volatilitySelect');
-const urlParams = new URLSearchParams(window.location.search);
-let currentVolatility = urlParams.get('vol') || 'low';
-volatilitySelect.value = currentVolatility;
+volatilitySelect.addEventListener('change', e => {
+    const selectedVol = e.target.value;
+    
+    // Optional: store selection in localStorage to remember after reload
+    localStorage.setItem('selectedVolatility', selectedVol);
 
-// Apply volatility AFTER setting dropdown and ensuring DOM ready
-window.addEventListener('DOMContentLoaded', () => {
-    applyVolatility(currentVolatility);
+    // Reload the page
+    location.reload();
 });
 
-volatilitySelect.addEventListener('change', e => {
-    const selected = e.target.value;
-    // Reload page with new volatility
-    window.location.href = window.location.pathname + '?vol=' + selected;
+// On page load, apply saved volatility if any
+window.addEventListener('load', () => {
+    const savedVol = localStorage.getItem('selectedVolatility');
+    if (savedVol) {
+        volatilitySelect.value = savedVol;
+        applyVolatility(savedVol); // initialize with saved volatility
+    }
 });
 
 
