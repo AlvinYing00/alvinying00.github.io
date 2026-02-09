@@ -451,19 +451,13 @@ function applyVolatility(level) {
     initChart(cfg.priceMin, cfg.priceMax);
 }
 
-// ---- LOAD SAVED VOLATILITY ----
-const savedVol = localStorage.getItem('selectedVolatility') || 'low';
-currentVolatility = savedVol;
-
-// Make the select dropdown reflect saved value
 const volatilitySelect = document.getElementById('volatilitySelect');
-volatilitySelect.value = savedVol;
+volatilitySelect.value = currentVolatility; // show default in dropdown
 
-// Attach change listener
+// Apply new volatility instantly when changed
 volatilitySelect.addEventListener('change', e => {
     const level = e.target.value;
-    localStorage.setItem('selectedVolatility', level);
-    window.location.reload(); // reload to reset chart with new volatility
+    applyVolatility(level);
 });
 
 window.addEventListener('resize', () => {
