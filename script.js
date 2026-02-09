@@ -446,7 +446,14 @@ function applyVolatility(level) {
     trendSteps = 0;
 
     balance = cfg.balance;       // now actually takes effect
-    if (window.renderTables) window.renderTables();
+    // Update balance in UI right away
+    if (window.renderTables) {
+        window.renderTables(); // make sure your balance table refreshes
+    } else {
+        // fallback: if renderTables not ready, just update manually
+        const balanceDisplay = document.getElementById('balanceDisplay');
+        if (balanceDisplay) balanceDisplay.textContent = balance.toFixed(2);
+    }
 
     // Init first candle using configured range
     initChart(cfg.priceMin, cfg.priceMax);
