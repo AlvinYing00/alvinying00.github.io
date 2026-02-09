@@ -161,9 +161,6 @@ function updateFloatingPL(enforceMargin = true) {
 function renderTables() {
     if (!data || data.length < 1) return;
 
-    // ❗ NO margin enforcement here
-    updateFloatingPL(false);
-
     document.getElementById("buyBtn").disabled = !marketOpen;
     document.getElementById("sellBtn").disabled = !marketOpen;
 
