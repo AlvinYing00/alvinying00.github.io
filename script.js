@@ -452,7 +452,15 @@ function applyVolatility(level) {
 }
 
 const volatilitySelect = document.getElementById('volatilitySelect');
-volatilitySelect.addEventListener('change', e => applyVolatility(e.target.value));
+volatilitySelect.addEventListener('change', e => {
+    const level = e.target.value;
+
+    // Save the choice in localStorage
+    localStorage.setItem('selectedVolatility', level);
+
+    // Reload the page
+    window.location.reload();
+});
 
 
 window.addEventListener('resize', () => {
