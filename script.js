@@ -118,13 +118,20 @@ function getRetraceThreshold(price) {
 }
 
 // ---- Init first candle ----
-function initChart() { 
-  const initialPrice = 9 + Math.random(); // random between 9 - 10 
-  const firstCandle = { time: ++time, open: initialPrice, high: initialPrice + 0.0010, low: initialPrice - 0.0010, close: initialPrice, }; 
+function initChart(priceMin = 9, priceMax = 10) { 
+  const initialPrice = priceMin + Math.random() * (priceMax - priceMin); 
+  const firstCandle = { 
+    time: ++time, 
+    open: initialPrice, 
+    high: initialPrice + 0.0010, 
+    low: initialPrice - 0.0010, 
+    close: initialPrice, 
+  }; 
   data.push(firstCandle); 
   candleSeries.setData(data); 
   updatePriceDisplay(); 
 } 
+
 
 initChart();
 
@@ -420,7 +427,6 @@ function toggleMarket() {
 }
 
 // ---- VOLATILITY ----
-// ---- VOLATILITY ----
 function applyVolatility(level) {
     currentVolatility = level;
     const cfg = volatilityConfig[level];
@@ -438,9 +444,10 @@ function applyVolatility(level) {
     currentTrend = null;
     trendSteps = 0;
 
-    balance = cfg.balance;
+    balance = cfg.balance;       // now actually takes effect
     if (window.renderTables) window.renderTables();
 
+    // Init first candle using configured range
     initChart(cfg.priceMin, cfg.priceMax);
 }
 
