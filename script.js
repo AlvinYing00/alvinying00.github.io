@@ -28,6 +28,21 @@ const TREND_MIN_STEPS = 25;   // minimum candles per trend
 const TREND_MAX_STEPS = 50;  // maximum candles per trend
 const TREND_VOL_FACTOR = 0.5; // smooth the trend (less randomness)
 
+const volatilityConfig = {
+  low:   { priceMin: 9,     priceMax: 10,     balance: 100 },
+  medium:{ priceMin: 90,    priceMax: 100,    balance: 500 },
+  high:  { priceMin: 900,   priceMax: 1000,   balance: 1000 },
+  ultra: { priceMin: 9000,  priceMax: 10000,  balance: 10000 }
+};
+
+let currentVolatility = 'low';
+
+const volatilitySelect = document.getElementById('volatilitySelect');
+volatilitySelect.addEventListener('change', (e) => {
+  const selected = e.target.value;
+  applyVolatility(selected);
+});
+
 function scheduleNextPattern() {
   const patterns = ["doubleTop", "doubleBottom", "headShoulders", "triangle", "flag", "wedge"];
   const choice = patterns[Math.floor(Math.random() * patterns.length)];
@@ -408,6 +423,44 @@ function toggleMarket() {
       window.setMarketOpen(true);
     }
   }
+}
+
+applyVolatility(currentVolatility); // start chart with selected level
+
+function applyVolatility(level) {
+    currentVolatility = level;
+    const cfg = volatilityConfig[level];
+
+    // Reset chart data
+    data = [];
+    time = 0;
+    sessionHigh = null;
+    sessionLow = null;
+    retraceTarget = null;
+    retraceSteps = 0;
+    currentPattern = null;
+    patternQueue = [];
+    patternCooldown = 0;
+    currentTrend = null;
+    trendSteps = 0;
+
+    // ✅ Update the existing balance from trade.js
+    balance = cfg.balance; 
+    if (window.renderTables) window.renderTables();
+
+    // Init first candle in new range
+    const initialPrice = cfg.priceMin + Math.random() * (cfg.priceMax - cfg.priceMin);
+    const wick = initialPrice * 0.001; // scale wick with price
+    const firstCandle = { 
+        time: ++time, 
+        open: initialPrice, 
+        high: initialPrice + wick, 
+        low: initialPrice - wick, 
+        close: initialPrice 
+    };
+    data.push(firstCandle);
+    candleSeries.setData(data);
+    updatePriceDisplay();
 }
 
 window.addEventListener('resize', () => {
