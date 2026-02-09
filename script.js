@@ -1,3 +1,4 @@
+// ---- Chart Setup ----
 const chartElement = document.getElementById('chart');
 const chart = LightweightCharts.createChart(chartElement, {
     width: chartElement.clientWidth,
@@ -10,15 +11,15 @@ const candleSeries = chart.addCandlestickSeries();
 let data = [];
 let time = 0;
 let marketInterval = null;
-
 const priceDisplay = document.getElementById('priceDisplay');
 
-// ---- Retracement params ----
+// ---- Retracement Params ----
 const RETRACE_MIN_FRAC = 0.60;
 const RETRACE_MAX_FRAC = 0.80;
-
 let retraceTarget = null;
 let retraceSteps = 0;
+
+// ---- Pattern / Trend Variables ----
 let currentPattern = null;
 let patternQueue = [];
 let patternCooldown = 0;
@@ -30,16 +31,16 @@ const TREND_MIN_STEPS = 25;
 const TREND_MAX_STEPS = 50;
 const TREND_VOL_FACTOR = 0.5;
 
+// ---- Volatility Config ----
 const volatilityConfig = {
     low:   { priceMin: 9,     priceMax: 10,     balance: 100 },
     medium:{ priceMin: 90,    priceMax: 100,    balance: 500 },
     high:  { priceMin: 900,   priceMax: 1000,   balance: 1000 },
     ultra: { priceMin: 9000,  priceMax: 10000,  balance: 10000 }
 };
-
 let currentVolatility = 'low';
 
-// ---- UTILITIES ----
+// ---- Utilities ----
 function fmt(num) { return Number(num).toFixed(2); }
 
 let smoothedVol = null;
@@ -58,13 +59,13 @@ function getRetraceThreshold(price) {
     return 0.5 * Math.pow(10, magnitude);
 }
 
-// ---- CHART INITIALIZATION ----
+// ---- Chart Init ----
 let sessionHigh = null;
 let sessionLow = null;
 
 function initFirstCandle(minPrice, maxPrice) {
     const initialPrice = minPrice + Math.random() * (maxPrice - minPrice);
-    const wick = initialPrice * 0.005 ; //small wick around price
+    const wick = initialPrice * 0.005;
     const firstCandle = {
         time: ++time,
         open: initialPrice,
@@ -79,7 +80,7 @@ function initFirstCandle(minPrice, maxPrice) {
     updatePriceDisplay();
 }
 
-// ---- PRICE DISPLAY ----
+// ---- Price Display ----
 function updatePriceDisplay() {
     if (!data.length) return;
     const lastCandle = data[data.length - 1];
@@ -99,74 +100,160 @@ function updatePriceDisplay() {
     document.getElementById('lowDisplay').textContent = fmt(sessionLow);
 }
 
-// ---- RETRACEMENT ----
-function triggerRetracement(prevPrice, movedPrice) {
-    const delta = movedPrice - prevPrice;
-    if (Math.abs(delta) < getRetraceThreshold(prevPrice)) return;
-
-    const frac = RETRACE_MIN_FRAC + Math.random() * (RETRACE_MAX_FRAC - RETRACE_MIN_FRAC);
-    retraceTarget = movedPrice - delta * frac;
-    retraceTarget = Math.max(0.00001, retraceTarget);
-    retraceSteps = 10 + Math.floor(Math.random() * 10);
+// ---- Patterns ----
+function scheduleNextPattern() {
+    const patterns = ["doubleTop", "doubleBottom", "headShoulders", "triangle", "flag", "wedge"];
+    const choice = patterns[Math.floor(Math.random() * patterns.length)];
+    patternQueue.push(choice);
+    patternCooldown = 120;
 }
 
-// ---- CANDLE GENERATION ----
-function generateCandle() {
-    if (!data.length) return;
+function startPattern(name) {
+    const steps = 80 + Math.floor(Math.random() * 71);
+    currentPattern = { name, steps, totalSteps: steps };
+}
 
+function continuePattern() {
+    if (!currentPattern) return;
+
+    switch(currentPattern.name) {
+        case "doubleTop": generateDoubleTopCandle(); break;
+        case "doubleBottom": generateDoubleBottomCandle(); break;
+        case "headShoulders": generateHeadAndShouldersCandle(); break;
+        case "triangle": generateTriangleCandle(); break;
+        case "flag": generateFlagCandle(); break;
+        case "wedge": generateWedgeCandle(); break;
+        default: generateDriftCandle();
+    }
+
+    currentPattern.steps--;
+    if (currentPattern.steps <= 0) {
+        currentPattern = null;
+        patternCooldown = 120;
+    }
+}
+
+// ---- Candle Generator ----
+function generateDriftCandle() {
+    if (!data.length) return;
     time++;
     const lastPrice = data[data.length - 1].close;
     let newClose;
 
-    // Rare spike
     if (Math.random() < 0.001) {
-        const direction = Math.random() < 0.5 ? -1 : 1;
-        const spike = lastPrice * (0.15 + Math.random() * 0.15) * direction;
-        newClose = Math.max(0.00001, lastPrice + spike);
+        const spikeDir = Math.random() < 0.5 ? -1 : 1;
+        const spikeAmt = lastPrice * (0.15 + Math.random() * 0.15) * spikeDir;
+        newClose = Math.max(0.00001, lastPrice + spikeAmt);
     } else if (retraceTarget !== null && retraceSteps > 0) {
         const step = (retraceTarget - lastPrice) / retraceSteps;
         const noise = (Math.random() - 0.5) * Math.abs(step);
         newClose = lastPrice + step + noise;
         retraceSteps--;
         if (retraceSteps <= 0) retraceTarget = null;
+    } else if (currentTrend) {
+        const trendDir = currentTrend === "up" ? 1 : -1;
+        const baseStep = getVolatility(lastPrice) * TREND_VOL_FACTOR * trendDir;
+        const noise = (Math.random() - 0.5) * baseStep * 0.2;
+        newClose = Math.max(0.01, lastPrice + baseStep + noise);
+        trendSteps--;
+        if (trendSteps <= 0) currentTrend = null;
     } else {
         const drift = (Math.random() - 0.5) * getVolatility(lastPrice);
         newClose = Math.max(0.01, lastPrice + drift);
-        if (Math.abs(drift) >= getRetraceThreshold(lastPrice)) {
-            triggerRetracement(lastPrice, newClose);
-        }
+        if (Math.abs(drift) >= getRetraceThreshold(lastPrice)) triggerRetracement(lastPrice, newClose);
     }
 
-    // Add wick around the body
+    // Candle + wick
     const bodyHigh = Math.max(lastPrice, newClose);
     const bodyLow = Math.min(lastPrice, newClose);
     const wickHigh = bodyHigh + Math.random() * getVolatility(lastPrice) * 0.5;
     const wickLow = Math.max(0.00001, bodyLow - Math.random() * getVolatility(lastPrice) * 0.5);
 
-    const candle = {
-        time,
-        open: lastPrice,
-        high: Math.max(bodyHigh, wickHigh),
-        low: Math.min(bodyLow, wickLow),
-        close: newClose
-    };
-
+    const candle = { time, open: lastPrice, high: Math.max(bodyHigh, wickHigh), low: Math.min(bodyLow, wickLow), close: newClose };
     data.push(candle);
     if (data.length > 3000) data.shift();
     candleSeries.setData(data);
     updatePriceDisplay();
 
-    // ---- Update floating P/L for open trades ----
     if (typeof updateFloatingPL === 'function') updateFloatingPL();
-    renderTables(); // make sure tables reflect updated P/L
 }
 
-// ---- VOLATILITY ----
+// ---- Pattern / Drift Controller ----
+function generatePatternCandle() {
+    if (currentPattern) {
+        continuePattern();
+        return;
+    }
+    if (patternCooldown > 0) {
+        generateDriftCandle();
+        patternCooldown--;
+        if (patternCooldown === 0) scheduleNextPattern();
+        return;
+    }
+    if (patternQueue.length > 0) {
+        const next = patternQueue.shift();
+        startPattern(next);
+        return;
+    }
+    generateDriftCandle();
+}
+
+// ---- Pump / Dump ----
+function pump() {
+    const v = Number(document.getElementById('priceInput').value);
+    if (!isFinite(v) || v === '') return alert('Enter a valid number.');
+    const lastPrice = data[data.length - 1].close;
+    const target = lastPrice + Math.abs(v);
+    pushManualCandle(lastPrice, target);
+}
+
+function dump() {
+    const v = Number(document.getElementById('priceInput').value);
+    if (!isFinite(v) || v === '') return alert('Enter a valid number.');
+    const lastPrice = data[data.length - 1].close;
+    const target = lastPrice - Math.abs(v);
+    pushManualCandle(lastPrice, target);
+}
+
+function pushManualCandle(open, close) {
+    time++;
+    const baseSpike = Math.max(Math.abs(close - open) * 0.6, getVolatility(open) * 0.03);
+    const high = Math.max(open, close) + Math.random() * baseSpike;
+    const low = Math.min(open, close) - Math.random() * baseSpike;
+    const candle = { time, open, high: Math.max(open, close, high), low: Math.max(0.00001, low), close };
+    data.push(candle);
+    if (data.length > 3000) data.shift();
+    candleSeries.setData(data);
+    updatePriceDisplay();
+}
+
+// ---- Trend Starter ----
+function maybeStartTrend() {
+    if (!currentTrend && Math.random() < TREND_CHANCE) {
+        currentTrend = Math.random() < 0.5 ? "up" : "down";
+        trendSteps = TREND_MIN_STEPS + Math.floor(Math.random() * (TREND_MAX_STEPS - TREND_MIN_STEPS + 1));
+    }
+}
+
+// ---- Market Control ----
+function toggleMarket() {
+    if (marketInterval) {
+        clearInterval(marketInterval);
+        marketInterval = null;
+        if (typeof window.setMarketOpen === 'function') window.setMarketOpen(false);
+    } else {
+        marketInterval = setInterval(() => {
+            maybeStartTrend();
+            generatePatternCandle();
+        }, 1000);
+        if (typeof window.setMarketOpen === 'function') window.setMarketOpen(true);
+    }
+}
+
+// ---- Volatility ----
 function applyVolatility(level) {
     currentVolatility = level;
     const cfg = volatilityConfig[level];
-
-    // Reset everything
     data = [];
     time = 0;
     sessionHigh = null;
@@ -181,48 +268,24 @@ function applyVolatility(level) {
 
     balance = cfg.balance;
     if (window.renderTables) window.renderTables();
-
-    // Init first candle with wick
     initFirstCandle(cfg.priceMin, cfg.priceMax);
 }
 
-const volatilitySelect = document.getElementById('volatilitySelect');
-volatilitySelect.addEventListener('change', e => {
+// ---- Event Listeners ----
+document.getElementById('volatilitySelect').addEventListener('change', e => {
     const selectedVol = e.target.value;
-    
-    // Optional: store selection in localStorage to remember after reload
     localStorage.setItem('selectedVolatility', selectedVol);
-
-    // Reload the page
     location.reload();
 });
 
-// On page load, apply saved volatility if any
 window.addEventListener('load', () => {
     const savedVol = localStorage.getItem('selectedVolatility');
     if (savedVol) {
-        volatilitySelect.value = savedVol;
-        applyVolatility(savedVol); // initialize with saved volatility
-    }
+        document.getElementById('volatilitySelect').value = savedVol;
+        applyVolatility(savedVol);
+    } else applyVolatility(currentVolatility);
 });
-
-// ---- MARKET CONTROL ----
-function toggleMarket() {
-    if (marketInterval) {
-        clearInterval(marketInterval);
-        marketInterval = null;
-        console.log('Market stopped.');
-        if (typeof window.setMarketOpen === 'function') window.setMarketOpen(false);
-    } else {
-        marketInterval = setInterval(generateCandle, 1000);
-        console.log('Market started.');
-        if (typeof window.setMarketOpen === 'function') window.setMarketOpen(true);
-    }
-}
 
 window.addEventListener('resize', () => {
     chart.resize(chartElement.clientWidth, chartElement.clientHeight);
 });
-
-// ---- START ----
-applyVolatility(currentVolatility);
