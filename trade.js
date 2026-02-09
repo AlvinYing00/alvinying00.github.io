@@ -127,12 +127,13 @@ function forceCloseAll() {
 }
 
 // ---- Update floating P/L ----
-function updateFloatingPL() {
+function updateFloatingPL(enforceMargin = true) {
     if (!data || data.length < 1) return;
 
     const lastPrice = data[data.length - 1].close;
     const spread = getSpread(lastPrice);
 
+    // 1️⃣ Recalculate floating P/L
     positions.forEach(trade => {
         if (!trade.open) return;
 
@@ -145,11 +146,13 @@ function updateFloatingPL() {
         }
     });
 
+    // 2️⃣ Compute floating loss AFTER update
     const totalFloatingLoss = positions
         .filter(p => p.open && p.profit < 0)
         .reduce((sum, p) => sum + Math.abs(p.profit), 0);
 
-    if (totalFloatingLoss > balance) {
+    // 3️⃣ Enforce margin ONLY when explicitly requested
+    if (enforceMargin && totalFloatingLoss > balance) {
         forceCloseAll();
     }
 }
@@ -158,7 +161,8 @@ function updateFloatingPL() {
 function renderTables() {
     if (!data || data.length < 1) return;
 
-    updateFloatingPL();
+    // ❗ NO margin enforcement here
+    updateFloatingPL(false);
 
     document.getElementById("buyBtn").disabled = !marketOpen;
     document.getElementById("sellBtn").disabled = !marketOpen;
@@ -172,7 +176,8 @@ function renderTables() {
 
     if (positions.some(p => p.open)) {
         balanceDisplay.style.color =
-            floatingPL > 0 ? "limegreen" : floatingPL < 0 ? "red" : "white";
+            floatingPL > 0 ? "limegreen" :
+            floatingPL < 0 ? "red" : "white";
     } else {
         balanceDisplay.style.color = "white";
     }
