@@ -125,6 +125,11 @@ let sessionLow = null;
 function updatePriceDisplay() {
   if (data.length < 2) return;
 
+  // 🔴 ENFORCE MARGIN ON PRICE UPDATE
+  if (typeof updateFloatingPL === "function") {
+    updateFloatingPL(true);
+  }
+
   const lastCandle = data[data.length - 1];
   const prevCandle = data[data.length - 2];
 
