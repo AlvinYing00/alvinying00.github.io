@@ -187,7 +187,24 @@ function applyVolatility(level) {
 }
 
 const volatilitySelect = document.getElementById('volatilitySelect');
-volatilitySelect.addEventListener('change', e => applyVolatility(e.target.value));
+volatilitySelect.addEventListener('change', e => {
+    const selectedVol = e.target.value;
+    
+    // Optional: store selection in localStorage to remember after reload
+    localStorage.setItem('selectedVolatility', selectedVol);
+
+    // Reload the page
+    location.reload();
+});
+
+// On page load, apply saved volatility if any
+window.addEventListener('load', () => {
+    const savedVol = localStorage.getItem('selectedVolatility');
+    if (savedVol) {
+        volatilitySelect.value = savedVol;
+        applyVolatility(savedVol); // initialize with saved volatility
+    }
+});
 
 // ---- MARKET CONTROL ----
 function toggleMarket() {
