@@ -1,12 +1,9 @@
-// -----------------------------
-// Chart Setup
-// -----------------------------
-const chartElement = document.getElementById('chart'); 
+const chartElement = document.getElementById('chart');
 const chart = LightweightCharts.createChart(chartElement, {
     width: chartElement.clientWidth,
     height: chartElement.clientHeight,
     layout: { backgroundColor: '#000000', textColor: '#DDD' },
-    grid: { vertLines: { color: 'transparent' }, horzLines: { color: 'transparent' } }
+    grid: { vertLines: { color: 'transparent' }, horzLines: { color: 'transparent' } },
 });
 const candleSeries = chart.addCandlestickSeries();
 
@@ -16,24 +13,18 @@ let marketInterval = null;
 
 const priceDisplay = document.getElementById('priceDisplay');
 
-window.addEventListener('resize', () => {
-    chart.resize(chartElement.clientWidth, chartElement.clientHeight);
-});
-
-// -----------------------------
-// Market & Pattern Config
-// -----------------------------
-const RETRACE_MIN_FRAC = 0.60; 
-const RETRACE_MAX_FRAC = 0.80; 
+// ---- Retracement params ----
+const RETRACE_MIN_FRAC = 0.60;
+const RETRACE_MAX_FRAC = 0.80;
 
 let retraceTarget = null;
 let retraceSteps = 0;
 let currentPattern = null;
 let patternQueue = [];
 let patternCooldown = 0;
-
 let currentTrend = null;
 let trendSteps = 0;
+
 const TREND_CHANCE = 0.15;
 const TREND_MIN_STEPS = 25;
 const TREND_MAX_STEPS = 50;
@@ -45,31 +36,19 @@ const volatilityConfig = {
     high:  { priceMin: 900,   priceMax: 1000,   balance: 1000 },
     ultra: { priceMin: 9000,  priceMax: 10000,  balance: 10000 }
 };
+
 let currentVolatility = 'low';
+
+// ---- UTILITIES ----
+function fmt(num) { return Number(num).toFixed(2); }
+
 let smoothedVol = null;
-
-// -----------------------------
-// Volatility Selector
-// -----------------------------
-const volatilitySelect = document.getElementById('volatilitySelect');
-volatilitySelect.addEventListener('change', (e) => {
-    applyVolatility(e.target.value);
-});
-
-// -----------------------------
-// Helper Functions
-// -----------------------------
-function fmt(num) {
-    return Number(num).toFixed(2);
-}
-
 function getVolatility(price) {
     const MIN_MOVE = price * 0.0055;
     const MAX_MOVE = price * 0.105;
     const r = Math.random();
     const skewed = Math.pow(r, 2.5);
     const rawVol = MIN_MOVE + (MAX_MOVE - MIN_MOVE) * skewed;
-
     smoothedVol = smoothedVol === null ? rawVol : smoothedVol * 0.8 + rawVol * 0.2;
     return smoothedVol;
 }
@@ -79,18 +58,32 @@ function getRetraceThreshold(price) {
     return 0.5 * Math.pow(10, magnitude);
 }
 
-// -----------------------------
-// Price Display & Session Tracking
-// -----------------------------
+// ---- CHART INITIALIZATION ----
 let sessionHigh = null;
 let sessionLow = null;
 
+function initFirstCandle(minPrice, maxPrice) {
+    const initialPrice = minPrice + Math.random() * (maxPrice - minPrice);
+    const wick = initialPrice * 0.001;
+    const firstCandle = {
+        time: ++time,
+        open: initialPrice,
+        high: initialPrice + wick,
+        low: initialPrice - wick,
+        close: initialPrice
+    };
+    data.push(firstCandle);
+    candleSeries.setData(data);
+    sessionHigh = firstCandle.high;
+    sessionLow = firstCandle.low;
+    updatePriceDisplay();
+}
+
+// ---- PRICE DISPLAY ----
 function updatePriceDisplay() {
     if (!data.length) return;
-
     const lastCandle = data[data.length - 1];
     const prevCandle = data.length > 1 ? data[data.length - 2] : lastCandle;
-
     const last = lastCandle.close;
     const prev = prevCandle.close;
 
@@ -99,17 +92,14 @@ function updatePriceDisplay() {
     priceDisplay.textContent = fmt(last);
     priceDisplay.style.color = last > prev ? 'limegreen' : last < prev ? 'red' : '#DDD';
 
-    // Update high/low
-    sessionHigh = sessionHigh === null ? lastCandle.high : Math.max(sessionHigh, lastCandle.high);
-    sessionLow = sessionLow === null ? lastCandle.low : Math.min(sessionLow, lastCandle.low);
+    if (lastCandle.high > sessionHigh) sessionHigh = lastCandle.high;
+    if (lastCandle.low < sessionLow) sessionLow = lastCandle.low;
 
     document.getElementById('highDisplay').textContent = fmt(sessionHigh);
     document.getElementById('lowDisplay').textContent = fmt(sessionLow);
 }
 
-// -----------------------------
-// Retracement & Pattern
-// -----------------------------
+// ---- RETRACEMENT ----
 function triggerRetracement(prevPrice, movedPrice) {
     const delta = movedPrice - prevPrice;
     if (Math.abs(delta) < getRetraceThreshold(prevPrice)) return;
@@ -118,111 +108,70 @@ function triggerRetracement(prevPrice, movedPrice) {
     retraceTarget = movedPrice - delta * frac;
     retraceTarget = Math.max(0.00001, retraceTarget);
     retraceSteps = 10 + Math.floor(Math.random() * 10);
-
-    console.log('Retrace TRIGGERED:', { prevPrice, movedPrice, delta, frac, target: retraceTarget, steps: retraceSteps });
 }
 
-function scheduleNextPattern() {
-    const patterns = ["doubleTop", "doubleBottom", "headShoulders", "triangle", "flag", "wedge"];
-    patternQueue.push(patterns[Math.floor(Math.random() * patterns.length)]);
-    patternCooldown = 120;
-}
-
-function startPattern(name) {
-    const steps = 80 + Math.floor(Math.random() * 71);
-    currentPattern = { name, steps, totalSteps: steps };
-}
-
-function continuePattern() {
-    if (!currentPattern) return;
-
-    switch(currentPattern.name) {
-        case "doubleTop": generateDoubleTopCandle(); break;
-        case "doubleBottom": generateDoubleBottomCandle(); break;
-        case "headShoulders": generateHeadAndShouldersCandle(); break;
-        case "triangle": generateTriangleCandle(); break;
-        case "flag": generateFlagCandle(); break;
-        case "wedge": generateWedgeCandle(); break;
-        default: generateCandle();
-    }
-
-    currentPattern.steps--;
-    if (currentPattern.steps <= 0) {
-        console.log("Pattern finished:", currentPattern.name);
-        currentPattern = null;
-        patternCooldown = 120;
-    }
-}
-
-// -----------------------------
-// Candle Generation
-// -----------------------------
+// ---- CANDLE GENERATION ----
 function generateCandle() {
+    if (!data.length) {
+        console.warn('No candles yet. Skipping generateCandle.');
+        return;
+    }
+
     time++;
     const lastPrice = data[data.length - 1].close;
-    let newClose = lastPrice;
+    let newClose;
 
-    // Retracement logic
-    if (retraceTarget !== null && retraceSteps > 0) {
-        const remainingDelta = retraceTarget - lastPrice;
-        const baseStep = remainingDelta / retraceSteps;
-        const noise = (Math.random() - 0.5) * Math.abs(baseStep);
-        newClose = lastPrice + baseStep + noise;
-        retraceSteps--;
-        if (retraceSteps <= 0) retraceTarget = null;
-    } else if (currentTrend) {
-        const trendDirection = currentTrend === "up" ? 1 : -1;
-        const baseStep = getVolatility(lastPrice) * TREND_VOL_FACTOR;
-        const noise = (Math.random() - 0.5) * baseStep * 0.2;
-        newClose = Math.max(0.01, lastPrice + baseStep * trendDirection + noise);
-        trendSteps--;
-        if (trendSteps <= 0) currentTrend = null;
-    } else {
-        const baseVol = getVolatility(lastPrice);
-        const drift = (Math.random() - 0.5) * baseVol;
-        newClose = Math.max(0.01, lastPrice + drift);
-        if (Math.abs(drift) >= getRetraceThreshold(lastPrice)) triggerRetracement(lastPrice, newClose);
+    // Rare spike
+    if (Math.random() < 0.001) {
+        const direction = Math.random() < 0.5 ? -1 : 1;
+        const spike = lastPrice * (0.15 + Math.random() * 0.15) * direction;
+        newClose = Math.max(0.00001, lastPrice + spike);
+
+        const candle = {
+            time,
+            open: lastPrice,
+            high: Math.max(lastPrice, newClose),
+            low: Math.min(lastPrice, newClose),
+            close: newClose
+        };
+        data.push(candle);
+        if (data.length > 3000) data.shift();
+        candleSeries.setData(data);
+        updatePriceDisplay();
+        return;
     }
 
-    const open = lastPrice;
-    const bodyHigh = Math.max(open, newClose);
-    const bodyLow = Math.min(open, newClose);
-    const wickTop = Math.max(bodyHigh, bodyHigh + Math.random() * getVolatility(lastPrice) * 0.3);
-    const wickBottom = Math.min(bodyLow, Math.max(0.01, bodyLow - Math.random() * getVolatility(lastPrice) * 0.3));
+    // Retracement
+    if (retraceTarget !== null && retraceSteps > 0) {
+        const step = (retraceTarget - lastPrice) / retraceSteps;
+        const noise = (Math.random() - 0.5) * Math.abs(step);
+        newClose = lastPrice + step + noise;
+        retraceSteps--;
+        if (retraceSteps <= 0) retraceTarget = null;
+    } else {
+        // Normal drift
+        const drift = (Math.random() - 0.5) * getVolatility(lastPrice);
+        newClose = Math.max(0.01, lastPrice + drift);
 
-    const newCandle = { time, open, high: Math.max(open, newClose, wickTop), low: Math.min(open, newClose, wickBottom), close: newClose };
-    data.push(newCandle);
+        if (Math.abs(drift) >= getRetraceThreshold(lastPrice)) {
+            triggerRetracement(lastPrice, newClose);
+        }
+    }
+
+    const candle = {
+        time,
+        open: lastPrice,
+        high: Math.max(lastPrice, newClose),
+        low: Math.min(lastPrice, newClose),
+        close: newClose
+    };
+    data.push(candle);
     if (data.length > 3000) data.shift();
     candleSeries.setData(data);
     updatePriceDisplay();
 }
 
-function generatePatternCandle() {
-    if (currentPattern) { continuePattern(); return; }
-    if (patternCooldown > 0) { generateCandle(); patternCooldown--; if (patternCooldown === 0) scheduleNextPattern(); return; }
-    if (patternQueue.length > 0) { startPattern(patternQueue.shift()); return; }
-    generateCandle();
-}
-
-// -----------------------------
-// Market Control
-// -----------------------------
-function toggleMarket() {
-    if (marketInterval) {
-        clearInterval(marketInterval);
-        marketInterval = null;
-        console.log('Market stopped.');
-        if (typeof window.setMarketOpen === "function") window.setMarketOpen(false);
-    } else {
-        marketInterval = setInterval(generatePatternCandle, 1000);
-        console.log('Market started.');
-        if (typeof window.setMarketOpen === "function") window.setMarketOpen(true);
-    }
-}
-
-// -----------------------------
-// Volatility Application
-// -----------------------------
+// ---- VOLATILITY ----
 function applyVolatility(level) {
     currentVolatility = level;
     const cfg = volatilityConfig[level];
@@ -240,20 +189,32 @@ function applyVolatility(level) {
     currentTrend = null;
     trendSteps = 0;
 
-    // Update global balance from trade.js
     balance = cfg.balance;
     if (window.renderTables) window.renderTables();
 
-    // First candle
-    const initialPrice = cfg.priceMin + Math.random() * (cfg.priceMax - cfg.priceMin);
-    const wick = initialPrice * 0.001;
-    const firstCandle = { time: ++time, open: initialPrice, high: initialPrice + wick, low: initialPrice - wick, close: initialPrice };
-    data.push(firstCandle);
-    candleSeries.setData(data);
-    updatePriceDisplay();
+    initFirstCandle(cfg.priceMin, cfg.priceMax);
 }
 
-// -----------------------------
-// Initialize Chart with Default Volatility
-// -----------------------------
+const volatilitySelect = document.getElementById('volatilitySelect');
+volatilitySelect.addEventListener('change', e => applyVolatility(e.target.value));
+
+// ---- MARKET CONTROL ----
+function toggleMarket() {
+    if (marketInterval) {
+        clearInterval(marketInterval);
+        marketInterval = null;
+        console.log('Market stopped.');
+        if (typeof window.setMarketOpen === 'function') window.setMarketOpen(false);
+    } else {
+        marketInterval = setInterval(generateCandle, 1000);
+        console.log('Market started.');
+        if (typeof window.setMarketOpen === 'function') window.setMarketOpen(true);
+    }
+}
+
+window.addEventListener('resize', () => {
+    chart.resize(chartElement.clientWidth, chartElement.clientHeight);
+});
+
+// ---- START ----
 applyVolatility(currentVolatility);
