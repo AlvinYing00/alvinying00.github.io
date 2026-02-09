@@ -441,7 +441,7 @@ function applyVolatility(level) {
     balance = cfg.balance;
     if (window.renderTables) window.renderTables();
 
-    initFirstCandle(cfg.priceMin, cfg.priceMax);
+    initChart(cfg.priceMin, cfg.priceMax);
 }
 
 const volatilitySelect = document.getElementById('volatilitySelect');
