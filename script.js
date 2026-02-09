@@ -35,9 +35,6 @@ const volatilityConfig = {
   ultra: { priceMin: 9000,  priceMax: 10000,  balance: 10000 }
 };
 
-const urlParams = new URLSearchParams(window.location.search);
-let currentVolatility = urlParams.get('vol') || 'low';
-
 function scheduleNextPattern() {
   const patterns = ["doubleTop", "doubleBottom", "headShoulders", "triangle", "flag", "wedge"];
   const choice = patterns[Math.floor(Math.random() * patterns.length)];
@@ -460,14 +457,23 @@ function applyVolatility(level) {
 }
 
 // Set dropdown to current volatility
+// ---- VOLATILITY ----
 const volatilitySelect = document.getElementById('volatilitySelect');
+const urlParams = new URLSearchParams(window.location.search);
+let currentVolatility = urlParams.get('vol') || 'low';
 volatilitySelect.value = currentVolatility;
+
+// Apply volatility AFTER setting dropdown and ensuring DOM ready
+window.addEventListener('DOMContentLoaded', () => {
+    applyVolatility(currentVolatility);
+});
 
 volatilitySelect.addEventListener('change', e => {
     const selected = e.target.value;
     // Reload page with new volatility
     window.location.href = window.location.pathname + '?vol=' + selected;
 });
+
 
 window.addEventListener('resize', () => {
   chart.resize(chartElement.clientWidth, chartElement.clientHeight);
