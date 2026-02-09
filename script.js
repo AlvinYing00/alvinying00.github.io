@@ -64,12 +64,12 @@ let sessionLow = null;
 
 function initFirstCandle(minPrice, maxPrice) {
     const initialPrice = minPrice + Math.random() * (maxPrice - minPrice);
-    const wick = initialPrice * 0.001;
+    const wick = initialPrice * 0.005 ; //small wick around price
     const firstCandle = {
         time: ++time,
         open: initialPrice,
-        high: initialPrice + wick,
-        low: initialPrice - wick,
+        high: initialPrice + Math.random() * wick,
+        low: Math.max(0.00001, initialPrice - Math.random() * wick),
         close: initialPrice
     };
     data.push(firstCandle);
@@ -77,6 +77,7 @@ function initFirstCandle(minPrice, maxPrice) {
     sessionHigh = firstCandle.high;
     sessionLow = firstCandle.low;
     updatePriceDisplay();
+    chart.timeScale().fitContent();
 }
 
 // ---- PRICE DISPLAY ----
@@ -112,10 +113,7 @@ function triggerRetracement(prevPrice, movedPrice) {
 
 // ---- CANDLE GENERATION ----
 function generateCandle() {
-    if (!data.length) {
-        console.warn('No candles yet. Skipping generateCandle.');
-        return;
-    }
+    if (!data.length) return;
 
     time++;
     const lastPrice = data[data.length - 1].close;
@@ -126,45 +124,34 @@ function generateCandle() {
         const direction = Math.random() < 0.5 ? -1 : 1;
         const spike = lastPrice * (0.15 + Math.random() * 0.15) * direction;
         newClose = Math.max(0.00001, lastPrice + spike);
-
-        const candle = {
-            time,
-            open: lastPrice,
-            high: Math.max(lastPrice, newClose),
-            low: Math.min(lastPrice, newClose),
-            close: newClose
-        };
-        data.push(candle);
-        if (data.length > 3000) data.shift();
-        candleSeries.setData(data);
-        updatePriceDisplay();
-        return;
-    }
-
-    // Retracement
-    if (retraceTarget !== null && retraceSteps > 0) {
+    } else if (retraceTarget !== null && retraceSteps > 0) {
         const step = (retraceTarget - lastPrice) / retraceSteps;
         const noise = (Math.random() - 0.5) * Math.abs(step);
         newClose = lastPrice + step + noise;
         retraceSteps--;
         if (retraceSteps <= 0) retraceTarget = null;
     } else {
-        // Normal drift
         const drift = (Math.random() - 0.5) * getVolatility(lastPrice);
         newClose = Math.max(0.01, lastPrice + drift);
-
         if (Math.abs(drift) >= getRetraceThreshold(lastPrice)) {
             triggerRetracement(lastPrice, newClose);
         }
     }
 
+    // Add wick around the body
+    const bodyHigh = Math.max(lastPrice, newClose);
+    const bodyLow = Math.min(lastPrice, newClose);
+    const wickHigh = bodyHigh + Math.random() * getVolatility(lastPrice) * 0.5;
+    const wickLow = Math.max(0.00001, bodyLow - Math.random() * getVolatility(lastPrice) * 0.5);
+
     const candle = {
         time,
         open: lastPrice,
-        high: Math.max(lastPrice, newClose),
-        low: Math.min(lastPrice, newClose),
+        high: Math.max(bodyHigh, wickHigh),
+        low: Math.min(bodyLow, wickLow),
         close: newClose
     };
+
     data.push(candle);
     if (data.length > 3000) data.shift();
     candleSeries.setData(data);
@@ -176,7 +163,7 @@ function applyVolatility(level) {
     currentVolatility = level;
     const cfg = volatilityConfig[level];
 
-    // Reset state
+    // Reset everything
     data = [];
     time = 0;
     sessionHigh = null;
@@ -192,6 +179,7 @@ function applyVolatility(level) {
     balance = cfg.balance;
     if (window.renderTables) window.renderTables();
 
+    // Init first candle with wick
     initFirstCandle(cfg.priceMin, cfg.priceMax);
 }
 
