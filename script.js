@@ -155,6 +155,10 @@ function generateCandle() {
     if (data.length > 3000) data.shift();
     candleSeries.setData(data);
     updatePriceDisplay();
+
+    // ---- Update floating P/L for open trades ----
+    if (typeof updateFloatingPL === 'function') updateFloatingPL();
+    renderTables(); // make sure tables reflect updated P/L
 }
 
 // ---- VOLATILITY ----
