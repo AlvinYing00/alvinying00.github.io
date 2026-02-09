@@ -28,6 +28,15 @@ const TREND_MIN_STEPS = 25;   // minimum candles per trend
 const TREND_MAX_STEPS = 50;  // maximum candles per trend
 const TREND_VOL_FACTOR = 0.5; // smooth the trend (less randomness)
 
+const volatilityConfig = {
+    low:   { priceMin: 9,     priceMax: 10,     balance: 100 },
+    medium:{ priceMin: 90,    priceMax: 100,    balance: 500 },
+    high:  { priceMin: 900,   priceMax: 1000,   balance: 1000 },
+    ultra: { priceMin: 9000,  priceMax: 10000,  balance: 10000 }
+};
+
+let currentVolatility = 'low';
+
 function scheduleNextPattern() {
   const patterns = ["doubleTop", "doubleBottom", "headShoulders", "triangle", "flag", "wedge"];
   const choice = patterns[Math.floor(Math.random() * patterns.length)];
@@ -405,6 +414,37 @@ function toggleMarket() {
   }
 }
 
+// ---- VOLATILITY ----
+function applyVolatility(level) {
+    currentVolatility = level;
+    const cfg = volatilityConfig[level];
+
+    // Reset everything
+    data = [];
+    time = 0;
+    sessionHigh = null;
+    sessionLow = null;
+    retraceTarget = null;
+    retraceSteps = 0;
+    currentPattern = null;
+    patternQueue = [];
+    patternCooldown = 0;
+    currentTrend = null;
+    trendSteps = 0;
+
+    balance = cfg.balance;
+    if (window.renderTables) window.renderTables();
+
+    // Init first candle with wick
+    initFirstCandle(cfg.priceMin, cfg.priceMax);
+}
+
+const volatilitySelect = document.getElementById('volatilitySelect');
+volatilitySelect.addEventListener('change', e => applyVolatility(e.target.value));
+
 window.addEventListener('resize', () => {
   chart.resize(chartElement.clientWidth, chartElement.clientHeight);
 });
+
+// ---- START ----
+applyVolatility(currentVolatility);
