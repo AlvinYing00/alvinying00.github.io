@@ -444,14 +444,15 @@ function applyVolatility(level) {
     currentTrend = null;
     trendSteps = 0;
 
-    balance = cfg.balance;       // now actually takes effect
-    // Update balance in UI right away
-    if (window.renderTables) {
-        window.renderTables(); // make sure your balance table refreshes
-    } else {
-        // fallback: if renderTables not ready, just update manually
-        const balanceDisplay = document.getElementById('balanceDisplay');
-        if (balanceDisplay) balanceDisplay.textContent = balance.toFixed(2);
+    balance = cfg.balance;
+
+    // 🔑 Force immediate sync
+    if (typeof updateFloatingPL === "function") {
+        updateFloatingPL(false); // no margin enforcement
+    }
+
+    if (typeof renderTables === "function") {
+        renderTables();
     }
 
     // Init first candle using configured range
@@ -470,13 +471,10 @@ volatilitySelect.addEventListener('change', e => {
 
 // On page load, apply saved volatility if any
 window.addEventListener('load', () => {
-    const savedVol = localStorage.getItem('selectedVolatility');
-    if (savedVol) {
-        volatilitySelect.value = savedVol;
-        applyVolatility(savedVol); // initialize with saved volatility
-    }
+    currentVolatility = 'low';
+    volatilitySelect.value = 'low';
+    applyVolatility('low');
 });
-
 
 window.addEventListener('resize', () => {
   chart.resize(chartElement.clientWidth, chartElement.clientHeight);
