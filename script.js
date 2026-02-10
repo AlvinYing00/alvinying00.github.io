@@ -444,32 +444,43 @@ function applyVolatility(level) {
     currentTrend = null;
     trendSteps = 0;
 
-    balance = cfg.balance;
-
-    // 🔑 Force immediate sync
-    if (typeof updateFloatingPL === "function") {
-        updateFloatingPL(false); // no margin enforcement
-    }
-
-    if (typeof renderTables === "function") {
-        renderTables();
+    balance = cfg.balance;       // now actually takes effect
+    // Update balance in UI right away
+    if (window.renderTables) {
+        window.renderTables(); // make sure your balance table refreshes
+    } else {
+        // fallback: if renderTables not ready, just update manually
+        const balanceDisplay = document.getElementById('balanceDisplay');
+        if (balanceDisplay) balanceDisplay.textContent = balance.toFixed(2);
     }
 
     // Init first candle using configured range
     initChart(cfg.priceMin, cfg.priceMax);
 }
 
+volatilitySelect.addEventListener('change', e => {
+    const selectedVol = e.target.value;
+    
+    // Optional: store selection in localStorage to remember after reload
+    localStorage.setItem('selectedVolatility', selectedVol);
+
+    // Reload the page
+    location.reload();
+});
+
 // On page load, apply saved volatility if any
 window.addEventListener('load', () => {
-    const saved = localStorage.getItem('selectedVolatility');
-    const level = saved || 'low';
-    currentVolatility = level;
-    volatilitySelect.value = level;
-    applyVolatility(level);
+    const savedVol = localStorage.getItem('selectedVolatility');
+    if (savedVol) {
+        volatilitySelect.value = savedVol;
+        applyVolatility(savedVol); // initialize with saved volatility
+    }
 });
+
 
 window.addEventListener('resize', () => {
   chart.resize(chartElement.clientWidth, chartElement.clientHeight);
 });
 
-
+// ---- START ----
+applyVolatility(currentVolatility);
