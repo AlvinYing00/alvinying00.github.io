@@ -51,6 +51,9 @@ function placeBuy() {
     };
 
     positions.push(trade);
+
+    // 🔑 calculate floating P/L immediately
+    updateFloatingPL(false);
     renderTables();
 }
 
@@ -76,6 +79,9 @@ function placeSell() {
     };
 
     positions.push(trade);
+
+    // 🔑 calculate floating P/L immediately
+    updateFloatingPL(false);
     renderTables();
 }
 
