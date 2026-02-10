@@ -37,6 +37,50 @@ const volatilityConfig = {
 
 let currentVolatility = 'low';
 
+const ma50Series = chart.addLineSeries({
+  color: 'dodgerblue',
+  lineWidth: 2,
+  priceLineVisible: false,
+  lastValueVisible: false,
+});
+
+const ma200Series = chart.addLineSeries({
+  color: 'orange',
+  lineWidth: 2,
+  priceLineVisible: false,
+  lastValueVisible: false,
+});
+
+function calculateMA(period, index) {
+  if (index + 1 < period) return null;
+
+  let sum = 0;
+  for (let i = index; i > index - period; i--) {
+    sum += data[i].close;
+  }
+  return sum / period;
+}
+
+function updateMovingAveragesIncremental() {
+  const i = data.length - 1;
+
+  const ma50 = calculateMA(50, i);
+  if (ma50 !== null) {
+    ma50Series.update({
+      time: data[i].time,
+      value: ma50,
+    });
+  }
+
+  const ma200 = calculateMA(200, i);
+  if (ma200 !== null) {
+    ma200Series.update({
+      time: data[i].time,
+      value: ma200,
+    });
+  }
+}
+
 function scheduleNextPattern() {
   const patterns = ["doubleTop", "doubleBottom", "headShoulders", "triangle", "flag", "wedge"];
   const choice = patterns[Math.floor(Math.random() * patterns.length)];
@@ -129,6 +173,7 @@ function initChart(priceMin = 9, priceMax = 10) {
   }; 
   data.push(firstCandle); 
   candleSeries.setData(data); 
+  updateMovingAveragesIncremental();
   updatePriceDisplay(); 
 } 
 
@@ -237,6 +282,7 @@ function generateCandle() {
 
     if (data.length > 3000) data.shift();
     candleSeries.setData(data);
+    updateMovingAveragesIncremental();
     updatePriceDisplay();
     return; // 🚨 stop here so normal candle logic doesn’t overwrite spike
   }
@@ -297,6 +343,7 @@ function generateCandle() {
 
   if (data.length > 3000) data.shift();
   candleSeries.setData(data);
+  
   updatePriceDisplay();
 }
 
@@ -337,6 +384,7 @@ function pump() {
 
   if (data.length > 3000) data.shift();
   candleSeries.setData(data);
+  updateMovingAveragesIncremental();
   updatePriceDisplay();
 }
 
@@ -375,6 +423,7 @@ function dump() {
 
   if (data.length > 3000) data.shift();
   candleSeries.setData(data);
+  updateMovingAveragesIncremental();
   updatePriceDisplay();
 }
 
@@ -444,7 +493,13 @@ function applyVolatility(level) {
     currentTrend = null;
     trendSteps = 0;
 
+    // 🔴 RESET CHART SERIES (IMPORTANT)
+    candleSeries.setData([]);
+    ma50Series.setData([]);
+    ma200Series.setData([]);
+
     balance = cfg.balance;       // now actually takes effect
+  
     // Update balance in UI right away
     if (window.renderTables) {
         window.renderTables(); // make sure your balance table refreshes
