@@ -459,26 +459,17 @@ function applyVolatility(level) {
     initChart(cfg.priceMin, cfg.priceMax);
 }
 
-volatilitySelect.addEventListener('change', e => {
-    const selectedVol = e.target.value;
-    
-    // Optional: store selection in localStorage to remember after reload
-    localStorage.setItem('selectedVolatility', selectedVol);
-
-    // Reload the page
-    location.reload();
-});
-
 // On page load, apply saved volatility if any
 window.addEventListener('load', () => {
-    currentVolatility = 'low';
-    volatilitySelect.value = 'low';
-    applyVolatility('low');
+    const saved = localStorage.getItem('selectedVolatility');
+    const level = saved || 'low';
+    currentVolatility = level;
+    volatilitySelect.value = level;
+    applyVolatility(level);
 });
 
 window.addEventListener('resize', () => {
   chart.resize(chartElement.clientWidth, chartElement.clientHeight);
 });
 
-// ---- START ----
-applyVolatility(currentVolatility);
+
