@@ -343,7 +343,8 @@ function generateCandle() {
 
   if (data.length > 3000) data.shift();
   candleSeries.setData(data);
-  
+
+  updateMovingAveragesIncremental()
   updatePriceDisplay();
 }
 
