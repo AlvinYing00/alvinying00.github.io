@@ -44,12 +44,41 @@
     <h3>Trading Dashboard</h3>
     <button id="sellBtn" onclick="placeSell()">Sell</button>
   </div>
-  
+  <thead>
+  <!-- Row 1: Close All button aligned to Action column -->
+  <tr>
+    <th></th>
+    <th></th>
+    <th></th>
+    <th></th>
+    <th></th>
+    <th style="text-align:right;">
+      <button id="closeAllBtn"
+              onclick="closeAllTrades()"
+              style="display:none;">
+        Close All
+      </button>
+    </th>
+  </tr>
+
+  <!-- Row 2: Column headers -->
+  <tr>
+    <th>ID</th>
+    <th>Type</th>
+    <th>Entry</th>
+    <th>Current</th>
+    <th>P/L</th>
+    <th>Action</th>
+  </tr>
+</thead>
   <p>Balance: $<span id="balance">100.00</span></p>
 
   <h4>Open Positions</h4>
   <table border="1" cellpadding="5" style="width:100%; border-collapse:collapse; color:#ddd;">
     <thead>
+      <button id="closeAllBtn" onclick="closeAllTrades()" style="display:none;">
+          Close All
+      </button>
       <tr>
         <th>ID</th><th>Type</th><th>Entry</th><th>Current</th><th>P/L</th><th>Action</th>
       </tr>
