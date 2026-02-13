@@ -137,6 +137,15 @@ function closeTrade(id) {
 
     trade.exit = exit;
     trade.open = false;
+    if (trade.tpLine) {
+        candleSeries.removePriceLine(trade.tpLine);
+        trade.tpLine = null;
+    }
+
+    if (trade.slLine) {
+        candleSeries.removePriceLine(trade.slLine);
+        trade.slLine = null;
+    }
     trade.closedAt = new Date().toLocaleTimeString();
 
     balance += trade.profit;
@@ -160,6 +169,14 @@ function forceCloseAll() {
         }
 
         trade.open = false;
+         if (trade.tpLine) {
+            candleSeries.removePriceLine(trade.tpLine);
+            trade.tpLine = null;
+        }
+        if (trade.slLine) {
+            candleSeries.removePriceLine(trade.slLine);
+            trade.slLine = null;
+        }
         trade.closedAt = new Date().toLocaleTimeString();
     });
 
