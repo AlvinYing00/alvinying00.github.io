@@ -47,6 +47,10 @@ function placeBuy() {
         open: true,
         exit: null,
         profit: 0,
+        tp: null,
+        sl: null,
+        tpLine: null,
+        slLine: null,
         timestamp: new Date().toLocaleTimeString()
     };
 
@@ -75,6 +79,10 @@ function placeSell() {
         open: true,
         exit: null,
         profit: 0,
+        tp: null,
+        sl: null,
+        tpLine: null,
+        slLine: null,
         timestamp: new Date().toLocaleTimeString()
     };
 
@@ -84,6 +92,31 @@ function placeSell() {
     updateFloatingPL(false);
     renderTables();
 }
+
+function setTP(id) {
+    const trade = positions.find(t => t.id === id && t.open);
+    if (!trade) return;
+
+    const value = parseFloat(prompt("Enter TP price:"));
+    if (isNaN(value)) return;
+
+    trade.tp = value;
+    createOrUpdateTPLine(trade);
+}
+
+function setSL(id) {
+    const trade = positions.find(t => t.id === id && t.open);
+    if (!trade) return;
+
+    const value = parseFloat(prompt("Enter SL price:"));
+    if (isNaN(value)) return;
+
+    trade.sl = value;
+    createOrUpdateSLLine(trade);
+}
+
+window.setTP = setTP;
+window.setSL = setSL;
 
 // ---- Close Trade ----
 function closeTrade(id) {
