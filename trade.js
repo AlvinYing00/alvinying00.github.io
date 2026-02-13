@@ -181,6 +181,48 @@ function forceCloseAll() {
     renderTables();
 }
 
+// ---- Manual Close All ----
+function closeAllTrades() {
+    if (!data || data.length === 0) return;
+
+    const lastPrice = data[data.length - 1].close;
+    const spread = getSpread(lastPrice);
+
+    positions.forEach(trade => {
+        if (!trade.open) return;
+
+        let exit;
+
+        if (trade.type === "BUY") {
+            exit = lastPrice - spread;
+            trade.profit = (exit - trade.entry) * trade.size;
+        } else {
+            exit = lastPrice + spread;
+            trade.profit = (trade.entry - exit) * trade.size;
+        }
+
+        trade.exit = exit;
+        trade.open = false;
+        trade.closedAt = new Date().toLocaleTimeString();
+
+        // Remove TP line
+        if (trade.tpLine) {
+            candleSeries.removePriceLine(trade.tpLine);
+            trade.tpLine = null;
+        }
+
+        // Remove SL line
+        if (trade.slLine) {
+            candleSeries.removePriceLine(trade.slLine);
+            trade.slLine = null;
+        }
+
+        balance += trade.profit;
+    });
+
+    renderTables();
+}
+
 // ---- Update floating P/L ----
 function updateFloatingPL(enforceMargin = true) {
     if (!data || data.length === 0) return;
@@ -258,12 +300,20 @@ function renderTables() {
     const effectiveBalance = balance + floatingPL;
     balanceDisplay.textContent = effectiveBalance.toFixed(2);
 
-    if (positions.some(p => p.open)) {
+    const hasOpenTrades = positions.some(p => p.open);
+
+    if (hasOpenTrades) {
         balanceDisplay.style.color =
             floatingPL > 0 ? "limegreen" :
             floatingPL < 0 ? "red" : "white";
     } else {
         balanceDisplay.style.color = "white";
+    }
+
+    // ---- Close All button visibility ----
+    const closeAllBtn = document.getElementById("closeAllBtn");
+    if (closeAllBtn) {
+        closeAllBtn.style.display = hasOpenTrades ? "inline-block" : "none";
     }
 
     // Open Trades
@@ -311,6 +361,7 @@ window.closeTrade = closeTrade;
 window.renderTables = renderTables;
 window.setTP = setTP;
 window.setSL = setSL;
+window.closeAllTrades = closeAllTrades;
 
 // Initial sync
 balanceDisplay.textContent = balance.toFixed(2);
