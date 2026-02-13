@@ -115,9 +115,6 @@ function setSL(id) {
     createOrUpdateSLLine(trade);
 }
 
-window.setTP = setTP;
-window.setSL = setSL;
-
 // ---- Close Trade ----
 function closeTrade(id) {
     const trade = positions.find(t => t.id === id && t.open);
@@ -248,8 +245,11 @@ function renderTables() {
             <td>${trade.entry.toFixed(2)}</td>
             <td>${data[data.length - 1].close.toFixed(2)}</td>
             <td class="${profitClass}">${trade.profit.toFixed(2)}</td>
-            <td><button onclick="closeTrade(${trade.id})">Close</button></td>
-        `;
+            <td>
+                <button onclick="setTP(${trade.id})">TP</button>
+                <button onclick="setSL(${trade.id})">SL</button>
+                <button onclick="closeTrade(${trade.id})">Close</button>
+            </td>`;
         openTable.appendChild(row);
     });
 
@@ -277,6 +277,8 @@ window.placeBuy = placeBuy;
 window.placeSell = placeSell;
 window.closeTrade = closeTrade;
 window.renderTables = renderTables;
+window.setTP = setTP;
+window.setSL = setSL;
 
 // Initial sync
 balanceDisplay.textContent = balance.toFixed(2);
