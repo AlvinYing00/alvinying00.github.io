@@ -177,7 +177,6 @@ function initChart(priceMin = 9, priceMax = 10) {
   updatePriceDisplay(); 
 } 
 
-
 initChart();
 
 let sessionHigh = null;
@@ -475,6 +474,45 @@ function toggleMarket() {
     }
   }
 }
+
+function createOrUpdateTPLine(trade) {
+    if (!trade.tp) return;
+
+    if (trade.tpLine) {
+        trade.tpLine.applyOptions({ price: trade.tp });
+        return;
+    }
+
+    trade.tpLine = candleSeries.createPriceLine({
+        price: trade.tp,
+        color: "green",
+        lineWidth: 2,
+        lineStyle: 0,
+        axisLabelVisible: true,
+        title: `TP #${trade.id}`
+    });
+}
+
+function createOrUpdateSLLine(trade) {
+    if (!trade.sl) return;
+
+    if (trade.slLine) {
+        trade.slLine.applyOptions({ price: trade.sl });
+        return;
+    }
+
+    trade.slLine = candleSeries.createPriceLine({
+        price: trade.sl,
+        color: "red",
+        lineWidth: 2,
+        lineStyle: 0,
+        axisLabelVisible: true,
+        title: `SL #${trade.id}`
+    });
+}
+
+window.createOrUpdateTPLine = createOrUpdateTPLine;
+window.createOrUpdateSLLine = createOrUpdateSLLine;
 
 // ---- VOLATILITY ----
 function applyVolatility(level) {
