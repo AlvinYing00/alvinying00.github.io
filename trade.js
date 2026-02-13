@@ -183,32 +183,64 @@ function forceCloseAll() {
 
 // ---- Update floating P/L ----
 function updateFloatingPL(enforceMargin = true) {
-    if (!data || data.length < 1) return;
+    if (!data || data.length === 0) return;
 
-    const lastPrice = data[data.length - 1].close;
-    const spread = getSpread(lastPrice);
+    const lastCandle = data[data.length - 1];
+    const closePrice = lastCandle.close;
+    const spread = getSpread(closePrice);
 
-    // 1️⃣ Recalculate floating P/L
+    // ---- 1️⃣ TP / SL Execution (intrabar realistic) ----
+    const tradesToClose = [];
+
+    positions.forEach(trade => {
+        if (!trade.open) return;
+
+        let hit = false;
+
+        if (trade.type === "BUY") {
+            if (trade.tp !== null && lastCandle.high >= trade.tp) {
+                hit = true;
+            } else if (trade.sl !== null && lastCandle.low <= trade.sl) {
+                hit = true;
+            }
+        } else { // SELL
+            if (trade.tp !== null && lastCandle.low <= trade.tp) {
+                hit = true;
+            } else if (trade.sl !== null && lastCandle.high >= trade.sl) {
+                hit = true;
+            }
+        }
+
+        if (hit) {
+            tradesToClose.push(trade.id);
+        }
+    });
+
+    // Close outside iteration (safe)
+    tradesToClose.forEach(id => closeTrade(id));
+
+    // ---- 2️⃣ Recalculate floating P/L ----
     positions.forEach(trade => {
         if (!trade.open) return;
 
         if (trade.type === "BUY") {
-            const currentExit = lastPrice - spread;
+            const currentExit = closePrice - spread;
             trade.profit = (currentExit - trade.entry) * trade.size;
         } else {
-            const currentExit = lastPrice + spread;
+            const currentExit = closePrice + spread;
             trade.profit = (trade.entry - currentExit) * trade.size;
         }
     });
 
-    // 2️⃣ Compute floating loss AFTER update
-    const totalFloatingLoss = positions
-        .filter(p => p.open && p.profit < 0)
-        .reduce((sum, p) => sum + Math.abs(p.profit), 0);
+    // ---- 3️⃣ Margin Check ----
+    if (enforceMargin) {
+        const totalFloatingLoss = positions
+            .filter(p => p.open && p.profit < 0)
+            .reduce((sum, p) => sum + Math.abs(p.profit), 0);
 
-    // 3️⃣ Enforce margin ONLY when explicitly requested
-    if (enforceMargin && totalFloatingLoss > balance) {
-        forceCloseAll();
+        if (totalFloatingLoss > balance) {
+            forceCloseAll();
+        }
     }
 }
 
