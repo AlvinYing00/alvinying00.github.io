@@ -511,9 +511,6 @@ function createOrUpdateSLLine(trade) {
     });
 }
 
-window.createOrUpdateTPLine = createOrUpdateTPLine;
-window.createOrUpdateSLLine = createOrUpdateSLLine;
-
 // ---- VOLATILITY ----
 function applyVolatility(level) {
     currentVolatility = level;
@@ -575,6 +572,9 @@ window.addEventListener('load', () => {
 window.addEventListener('resize', () => {
   chart.resize(chartElement.clientWidth, chartElement.clientHeight);
 });
+
+window.createOrUpdateTPLine = createOrUpdateTPLine;
+window.createOrUpdateSLLine = createOrUpdateSLLine;
 
 // ---- START ----
 applyVolatility(currentVolatility);
