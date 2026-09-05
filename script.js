@@ -1,3 +1,5 @@
+//script.js
+
 const chartElement = document.getElementById('chart'); 
 const chart = LightweightCharts.createChart(
   chartElement, { width: chartElement.clientWidth, height: chartElement.clientHeight, 
@@ -9,6 +11,18 @@ const candleSeries = chart.addCandlestickSeries();
 let data = [];
 let time = 0;
 let marketInterval = null;
+
+// ---- High-frequency tick engine ----
+// Price moves every 250ms; one chart candle represents 15 seconds.
+const TICK_INTERVAL_MS = 250;
+const CANDLE_INTERVAL_MS = 15000;
+const TICKS_PER_CANDLE = CANDLE_INTERVAL_MS / TICK_INTERVAL_MS;
+
+let tickInterval = null;
+let candleTickCount = 0;
+let currentTickPrice = null;
+let currentCandle = null;
+let marketSeconds = 0;
 
 const priceDisplay = document.getElementById('priceDisplay');
 
@@ -171,10 +185,13 @@ function initChart(priceMin = 9, priceMax = 10) {
     low: initialPrice - 0.0010, 
     close: initialPrice, 
   }; 
-  data.push(firstCandle); 
-  candleSeries.setData(data); 
+  data.push(firstCandle);
+  candleSeries.setData(data);
+  currentTickPrice = initialPrice;
+  currentCandle = firstCandle;
+  candleTickCount = 0;
   updateMovingAveragesIncremental();
-  updatePriceDisplay(); 
+  updatePriceDisplay();
 } 
 
 initChart();
@@ -244,6 +261,166 @@ function triggerRetracement(prevPrice, movedPrice) {
     target: Number(retraceTarget.toFixed(5)),
     steps: retraceSteps,
   });
+}
+
+
+// ============================================================
+// TICK ENGINE
+// ============================================================
+// generateCandle() still contains the simulator's existing
+// movement logic. The tick engine calls it once per candle
+// as a "movement request", then interpolates the resulting
+// candle direction at 250ms resolution.
+//
+// This keeps existing pattern/trend/retrace behavior while
+// separating price movement from candle finalization.
+
+function generateTickMove() {
+    if (!data || data.length === 0) return 0;
+
+    const lastPrice = currentTickPrice ?? data[data.length - 1].close;
+
+    // Ask the existing market logic for the next intended price.
+    // Temporarily generate the movement using the existing engine.
+    const previousClose = data[data.length - 1].close;
+
+    generateCandle();
+
+    const generatedPrice = data[data.length - 1].close;
+
+    // Remove the generated candle. The tick engine will construct
+    // the actual 15-second candle from tick prices.
+    data.pop();
+    candleSeries.setData(data);
+
+    const rawMove = generatedPrice - previousClose;
+
+    // News is applied at tick level, not candle level.
+    const newsMove =
+        typeof applyNewsToPriceMove === "function"
+            ? applyNewsToPriceMove(rawMove, marketSeconds)
+            : rawMove;
+
+    return newsMove;
+}
+
+function beginCandle() {
+    const price = currentTickPrice ?? data[data.length - 1].close;
+
+    time++;
+
+    currentCandle = {
+        time,
+        open: price,
+        high: price,
+        low: price,
+        close: price
+    };
+
+    data.push(currentCandle);
+
+    if (data.length > 3000) {
+        data.shift();
+    }
+}
+
+function updateCurrentCandle(price) {
+
+    if (!currentCandle) {
+        beginCandle();
+    }
+
+    currentTickPrice = Math.max(0.00001, price);
+
+    currentCandle.high = Math.max(
+        currentCandle.high,
+        currentTickPrice
+    );
+
+    currentCandle.low = Math.min(
+        currentCandle.low,
+        currentTickPrice
+    );
+
+    currentCandle.close = currentTickPrice;
+
+    candleSeries.update(currentCandle);
+
+    updateMovingAveragesIncremental();
+    updatePriceDisplay();
+
+    // TP / SL and floating P/L are checked on every tick.
+    if (typeof updateFloatingPL === "function") {
+        updateFloatingPL(true);
+    }
+}
+
+function generateMarketTick() {
+
+    if (!marketInterval) return;
+
+    // 250ms = 0.25 second.
+    marketSeconds += TICK_INTERVAL_MS / 1000;
+
+    // Generate an intended movement from the existing market engine.
+    let move = generateTickMove();
+
+    // Scale the existing one-candle movement across 60 ticks.
+    move /= TICKS_PER_CANDLE;
+
+    const noiseBase =
+        getVolatility(currentTickPrice || data[data.length - 1].close);
+
+    // Small continuous tick noise makes the price visibly alive.
+    const tickNoise =
+        (Math.random() - 0.5) *
+        noiseBase *
+        0.08;
+
+    const nextPrice =
+        (currentTickPrice || data[data.length - 1].close) +
+        move +
+        tickNoise;
+
+    updateCurrentCandle(nextPrice);
+
+    candleTickCount++;
+
+    // Finalize every 15 seconds.
+    if (candleTickCount >= TICKS_PER_CANDLE) {
+
+        candleTickCount = 0;
+
+        // Make sure the current candle's final close is exact.
+        currentCandle.close = currentTickPrice;
+
+        candleSeries.update(currentCandle);
+
+        // Start the next candle on the next tick.
+        currentCandle = null;
+    }
+}
+
+function startTickEngine() {
+
+    if (tickInterval) return;
+
+    // The first candle already exists from initChart().
+    currentTickPrice = data[data.length - 1].close;
+    currentCandle = data[data.length - 1];
+
+    tickInterval = setInterval(
+        generateMarketTick,
+        TICK_INTERVAL_MS
+    );
+}
+
+function stopTickEngine() {
+
+    if (!tickInterval) return;
+
+    clearInterval(tickInterval);
+    tickInterval = null;
 }
 
 // ---- Auto market generator ----
@@ -456,19 +633,23 @@ function generatePatternCandle() {
 // Start/Stop live market
 function toggleMarket() {
   if (marketInterval) {
-    clearInterval(marketInterval);
+
     marketInterval = null;
+    stopTickEngine();
+
     console.log('Market stopped.');
 
-    // Inform trade.js that market is closed (if it's loaded)
     if (typeof window.setMarketOpen === "function") {
       window.setMarketOpen(false);
     }
-  } else {
-    marketInterval = setInterval(generatePatternCandle, 1000);
-    console.log('Market started.');
 
-    // Inform trade.js that market is open (if it's loaded)
+  } else {
+
+    marketInterval = true;
+    startTickEngine();
+
+    console.log('Market started. Price ticks every 0.25s; candles every 15s.');
+
     if (typeof window.setMarketOpen === "function") {
       window.setMarketOpen(true);
     }
@@ -528,6 +709,10 @@ function applyVolatility(level) {
     patternCooldown = 0;
     currentTrend = null;
     trendSteps = 0;
+    candleTickCount = 0;
+    currentTickPrice = null;
+    currentCandle = null;
+    marketSeconds = 0;
 
     // 🔴 RESET CHART SERIES (IMPORTANT)
     candleSeries.setData([]);
@@ -575,6 +760,9 @@ window.addEventListener('resize', () => {
 
 window.createOrUpdateTPLine = createOrUpdateTPLine;
 window.createOrUpdateSLLine = createOrUpdateSLLine;
+window.getCurrentTickPrice = function () {
+    return currentTickPrice;
+};
 
 // ---- START ----
 applyVolatility(currentVolatility);
