@@ -34,7 +34,10 @@ function placeBuy() {
     if (balance <= 0) return alert("Insufficient funds! Balance is 0.");
     if (!data || data.length < 1) return alert("No market data available.");
 
-    const lastPrice = data[data.length - 1].close;
+    const lastPrice =
+        typeof currentTickPrice === "number"
+            ? currentTickPrice
+            : data[data.length - 1].close;
     const spread = getSpread(lastPrice);
     const entry = lastPrice + spread;
 
@@ -66,7 +69,10 @@ function placeSell() {
     if (balance <= 0) return alert("Insufficient funds! Balance is 0.");
     if (!data || data.length < 1) return alert("No market data available.");
 
-    const lastPrice = data[data.length - 1].close;
+    const lastPrice =
+        typeof currentTickPrice === "number"
+            ? currentTickPrice
+            : data[data.length - 1].close;
     const spread = getSpread(lastPrice);
     const entry = Math.max(0.01, lastPrice - spread);
 
@@ -120,7 +126,10 @@ function closeTrade(id) {
     const trade = positions.find(t => t.id === id && t.open);
     if (!trade) return;
 
-    const lastPrice = data[data.length - 1].close;
+    const lastPrice =
+        typeof currentTickPrice === "number"
+            ? currentTickPrice
+            : data[data.length - 1].close;
     const spread = getSpread(lastPrice);
 
     let exit;
@@ -154,7 +163,10 @@ function forceCloseAll() {
     positions.forEach(trade => {
         if (!trade.open) return;
 
-        const lastPrice = data[data.length - 1].close;
+        const lastPrice =
+        typeof currentTickPrice === "number"
+            ? currentTickPrice
+            : data[data.length - 1].close;
         const spread = getSpread(lastPrice);
 
         if (trade.type === "BUY") {
@@ -185,7 +197,10 @@ function forceCloseAll() {
 function closeAllTrades() {
     if (!data || data.length === 0) return;
 
-    const lastPrice = data[data.length - 1].close;
+    const lastPrice =
+        typeof currentTickPrice === "number"
+            ? currentTickPrice
+            : data[data.length - 1].close;
     const spread = getSpread(lastPrice);
 
     positions.forEach(trade => {
@@ -228,7 +243,11 @@ function updateFloatingPL(enforceMargin = true) {
     if (!data || data.length === 0) return;
 
     const lastCandle = data[data.length - 1];
-    const closePrice = lastCandle.close;
+    // Use live 250ms tick price when available.
+    const closePrice =
+        typeof currentTickPrice === "number"
+            ? currentTickPrice
+            : lastCandle.close;
     const spread = getSpread(closePrice);
 
     // ---- 1️⃣ TP / SL Execution (intrabar realistic) ----
