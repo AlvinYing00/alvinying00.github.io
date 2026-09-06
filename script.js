@@ -23,7 +23,9 @@ let candleTickCount = 0;
 let currentTickPrice = null;
 let currentCandle = null;
 let marketSeconds = 0;
+let candleMove = null;
 
+const volatilitySelect = document.getElementById('volatilitySelect');
 const priceDisplay = document.getElementById('priceDisplay');
 
 // ---- Retracement params ----
@@ -34,7 +36,7 @@ let retraceTarget = null;
 let retraceSteps = 0; // candles left in retracement
 let currentPattern = null;
 let patternQueue = [];
-let patternCooldown = 0; // countdown in seconds
+let patternCooldown = 0; // countdown in candles
 let currentTrend = null; // "up" or "down"
 let trendSteps = 0;      // remaining candles in trend
 const TREND_CHANCE = 0.15;   // 15% chance to start a trend when idle
@@ -110,27 +112,28 @@ function startPattern(name) {
 function continuePattern() {
   if (!currentPattern) return;
 
+  let target;
   switch(currentPattern.name) {
     case "doubleTop":
-      generateDoubleTopCandle();
+      target = generateDoubleTopCandle();
     break;
     case "doubleBottom":
-      generateDoubleBottomCandle();
+      target = generateDoubleBottomCandle();
     break;
     case "headShoulders":
-      generateHeadAndShouldersCandle();
+      target = generateHeadAndShouldersCandle();
     break;
     case "triangle":
-      generateTriangleCandle();
+      target = generateTriangleCandle();
     break;
     case "flag":
-      generateFlagCandle();
+      target = generateFlagCandle();
     break;
     case "wedge":
-      generateWedgeCandle();
+      target = generateWedgeCandle();
     break;
   default:
-    generateCandle();
+    target = generateCandle();
 }
 
   currentPattern.steps--;
@@ -139,6 +142,7 @@ function continuePattern() {
     currentPattern = null;
     patternCooldown = 120;
   }
+  return target;
 }
 
 // ---- Format helper ----
@@ -179,7 +183,7 @@ function getRetraceThreshold(price) {
 function initChart(priceMin = 9, priceMax = 10) { 
   const initialPrice = priceMin + Math.random() * (priceMax - priceMin); 
   const firstCandle = { 
-    time: ++time, 
+    time: (time += CANDLE_INTERVAL_MS / 1000), 
     open: initialPrice, 
     high: initialPrice + 0.0010, 
     low: initialPrice - 0.0010, 
@@ -190,17 +194,14 @@ function initChart(priceMin = 9, priceMax = 10) {
   currentTickPrice = initialPrice;
   currentCandle = firstCandle;
   candleTickCount = 0;
-  updateMovingAveragesIncremental();
   updatePriceDisplay();
-} 
-
-initChart();
+}
 
 let sessionHigh = null;
 let sessionLow = null;
 
 function updatePriceDisplay() {
-  if (data.length < 2) return;
+  if (data.length < 1) return;
 
   // 🔴 ENFORCE MARGIN ON PRICE UPDATE
   if (typeof updateFloatingPL === "function") {
@@ -208,7 +209,7 @@ function updatePriceDisplay() {
   }
 
   const lastCandle = data[data.length - 1];
-  const prevCandle = data[data.length - 2];
+  const prevCandle = data[data.length - 2] || lastCandle;
 
   const last = lastCandle.close;
   const prev = prevCandle.close;
@@ -267,47 +268,21 @@ function triggerRetracement(prevPrice, movedPrice) {
 // ============================================================
 // TICK ENGINE
 // ============================================================
-// generateCandle() still contains the simulator's existing
-// movement logic. The tick engine calls it once per candle
-// as a "movement request", then interpolates the resulting
-// candle direction at 250ms resolution.
-//
-// This keeps existing pattern/trend/retrace behavior while
-// separating price movement from candle finalization.
-
+// Choose movement once per candle; only the tick engine writes chart data.
 function generateTickMove() {
-    if (!data || data.length === 0) return 0;
-
-    const lastPrice = currentTickPrice ?? data[data.length - 1].close;
-
-    // Ask the existing market logic for the next intended price.
-    // Temporarily generate the movement using the existing engine.
-    const previousClose = data[data.length - 1].close;
-
-    generateCandle();
-
-    const generatedPrice = data[data.length - 1].close;
-
-    // Remove the generated candle. The tick engine will construct
-    // the actual 15-second candle from tick prices.
-    data.pop();
-    candleSeries.setData(data);
-
-    const rawMove = generatedPrice - previousClose;
-
-    // News is applied at tick level, not candle level.
-    const newsMove =
-        typeof applyNewsToPriceMove === "function"
-            ? applyNewsToPriceMove(rawMove, marketSeconds)
-            : rawMove;
-
-    return newsMove;
+    if (candleMove === null) {
+        const target = generatePatternCandle();
+        candleMove = (target - currentTickPrice) / TICKS_PER_CANDLE;
+    }
+    return typeof applyNewsToPriceMove === "function"
+        ? applyNewsToPriceMove(candleMove, marketSeconds)
+        : candleMove;
 }
 
 function beginCandle() {
     const price = currentTickPrice ?? data[data.length - 1].close;
 
-    time++;
+    time += CANDLE_INTERVAL_MS / 1000;
 
     currentCandle = {
         time,
@@ -321,6 +296,7 @@ function beginCandle() {
 
     if (data.length > 3000) {
         data.shift();
+        candleSeries.setData(data);
     }
 }
 
@@ -346,13 +322,7 @@ function updateCurrentCandle(price) {
 
     candleSeries.update(currentCandle);
 
-    updateMovingAveragesIncremental();
     updatePriceDisplay();
-
-    // TP / SL and floating P/L are checked on every tick.
-    if (typeof updateFloatingPL === "function") {
-        updateFloatingPL(true);
-    }
 }
 
 function generateMarketTick() {
@@ -365,8 +335,6 @@ function generateMarketTick() {
     // Generate an intended movement from the existing market engine.
     let move = generateTickMove();
 
-    // Scale the existing one-candle movement across 60 ticks.
-    move /= TICKS_PER_CANDLE;
 
     const noiseBase =
         getVolatility(currentTickPrice || data[data.length - 1].close);
@@ -396,8 +364,11 @@ function generateMarketTick() {
 
         candleSeries.update(currentCandle);
 
-        // Start the next candle on the next tick.
+        updateMovingAveragesIncremental();
+
+        // Start the next candle on the next tick (or manual price move).
         currentCandle = null;
+        candleMove = null;
     }
 }
 
@@ -405,9 +376,7 @@ function startTickEngine() {
 
     if (tickInterval) return;
 
-    // The first candle already exists from initChart().
-    currentTickPrice = data[data.length - 1].close;
-    currentCandle = data[data.length - 1];
+    // Preserve the active candle and tick count when resuming.
 
     tickInterval = setInterval(
         generateMarketTick,
@@ -435,7 +404,6 @@ function maybeStartTrend() {
 }
 
 function generateCandle() {
-  time++;
   const lastPrice = data[data.length - 1].close;
   let newClose;
 
@@ -448,19 +416,7 @@ function generateCandle() {
 
     console.log("💥 SPIKE triggered!", spikeDirection > 0 ? "PUMP" : "DUMP", "to", newClose.toFixed(2));
 
-    const open = lastPrice;
-    const close = newClose;
-    const high = spikeDirection > 0 ? newClose : Math.max(open, close);
-    const low = spikeDirection < 0 ? newClose : Math.min(open, close);
-
-    const spikeCandle = { time, open, high, low, close };
-    data.push(spikeCandle);
-
-    if (data.length > 3000) data.shift();
-    candleSeries.setData(data);
-    updateMovingAveragesIncremental();
-    updatePriceDisplay();
-    return; // 🚨 stop here so normal candle logic doesn’t overwrite spike
+    return newClose;
   }
 
   if (retraceTarget !== null && retraceSteps > 0) {
@@ -507,127 +463,35 @@ function generateCandle() {
     }
   }
 
-  // Candle body + wick
-  const open = lastPrice;
-  const bodyHigh = Math.max(open, newClose);
-  const bodyLow = Math.min(open, newClose);
-  const wickTop = Math.max(bodyHigh, bodyHigh + Math.random() * getVolatility(lastPrice) * 0.3);
-  const wickBottom = Math.min(bodyLow, Math.max(0.01, bodyLow - Math.random() * getVolatility(lastPrice) * 0.3));
-
-  const newCandle = { time, open, high: Math.max(open, newClose, wickTop), low: Math.min(open, newClose, wickBottom), close: newClose };
-  data.push(newCandle);
-
-  if (data.length > 3000) data.shift();
-  candleSeries.setData(data);
-
-  updateMovingAveragesIncremental()
-  updatePriceDisplay();
+  return Math.max(0.00001, newClose);
 }
 
-// ---- Pump (manual action) ----
-function pump() {
+// Manual moves share the active candle and do not advance its clock.
+function applyManualMove(direction) {
   const raw = document.getElementById('priceInput').value;
-  const v = Number(raw);
-  if (!isFinite(v) || raw === '') return alert('Enter a valid number.');
-  const delta = Math.abs(v);
-
-  const lastPrice = data[data.length - 1].close;
-  const targetPrice = Math.max(0.00001, lastPrice + delta);
-
-  time++;
-  const open = lastPrice;
-  const close = targetPrice;
-
-  // Pump
-  const baseSpike = Math.max(Math.abs(close - open) * 0.6, getVolatility(lastPrice) * 0.03);
-
-  // Pump
-  const high = close + Math.random() * baseSpike; 
-  const low = Math.min(open, close);  // lowest point = body only, no extra wick
-
-  const newCandle = {
-    time,
-    open,
-    high: Math.max(open, close, high),
-    low: Math.min(open, close, low),
-    close
-  };
-  data.push(newCandle);
-
-  // Trigger retracement if necessary
-  if (Math.abs(targetPrice - lastPrice) >= getRetraceThreshold(lastPrice)) {
-    triggerRetracement(lastPrice, targetPrice);
-  }
-
-  if (data.length > 3000) data.shift();
-  candleSeries.setData(data);
-  updateMovingAveragesIncremental();
-  updatePriceDisplay();
+  const value = Number(raw);
+  if (!Number.isFinite(value) || raw.trim() === '') return alert('Enter a valid number.');
+  const previousPrice = currentTickPrice;
+  const targetPrice = Math.max(0.00001, previousPrice + direction * Math.abs(value));
+  if (!Number.isFinite(targetPrice)) return alert('Enter a valid number.');
+  updateCurrentCandle(targetPrice);
+  triggerRetracement(previousPrice, targetPrice);
 }
 
-// ---- Dump (manual action) ----
-function dump() {
-  const raw = document.getElementById('priceInput').value;
-  const v = Number(raw);
-  if (!isFinite(v) || raw === '') return alert('Enter a valid number.');
-  const delta = Math.abs(v);
-
-  const lastPrice = data[data.length - 1].close;
-  const targetPrice = Math.max(0.00001, lastPrice - delta);
-
-  time++;
-  const open = lastPrice;
-  const close = targetPrice;
-
- // Dump
-  const baseSpike = Math.max(Math.abs(close - open) * 0.6, getVolatility(lastPrice) * 0.03);
-
-  // Dump
-  const high = Math.max(open, close); // highest point = body only, no extra wick
-  const low = close - Math.random() * baseSpike;
-  const newCandle = {
-    time,
-    open,
-    high: Math.max(open, close, high),
-    low: Math.min(open, close, Math.max(low, 0.00001)),
-    close
-  };
-  data.push(newCandle);
-
-  if (Math.abs(targetPrice - lastPrice) >= getRetraceThreshold(lastPrice)) {
-    triggerRetracement(lastPrice, targetPrice);
-  }
-
-  if (data.length > 3000) data.shift();
-  candleSeries.setData(data);
-  updateMovingAveragesIncremental();
-  updatePriceDisplay();
-}
+function pump() { applyManualMove(1); }
+function dump() { applyManualMove(-1); }
 
 function generatePatternCandle() {
-  if (currentPattern) {
-    continuePattern();
-    return;
-  }
-
+  if (currentPattern) return continuePattern();
   if (patternCooldown > 0) {
-    generateCandle(); // normal drift while waiting
     patternCooldown--;
-
-    if (patternCooldown === 0) {
-      scheduleNextPattern();
-    }
-    return;
+    return generateCandle();
   }
-
   if (patternQueue.length > 0) {
-    const next = patternQueue.shift();
-    startPattern(next);
-    return;
+    startPattern(patternQueue.shift());
+    return continuePattern();
   }
-
-  // Default drift
-  generateCandle();
+  return generateCandle();
 }
 
 // Start/Stop live market
@@ -713,6 +577,8 @@ function applyVolatility(level) {
     currentTickPrice = null;
     currentCandle = null;
     marketSeconds = 0;
+    candleMove = null;
+    smoothedVol = null;
 
     // 🔴 RESET CHART SERIES (IMPORTANT)
     candleSeries.setData([]);
