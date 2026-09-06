@@ -14,58 +14,48 @@
 <body>
   <h1>FRXUSD</h1>
   <div id="chart"></div>
-  <div id="priceBar"> 
+  <div id="chartControls" aria-label="Chart indicators">
+    <label><input id="showMA50" type="checkbox" checked> Show MA50</label>
+    <label><input id="showMA200" type="checkbox" checked> Show MA200</label>
+  </div>
+  <div id="priceBar">
     <span>Current Price: <span id="priceDisplay">—</span></span>
     <span>High: <span id="highDisplay">—</span></span>
     <span>Low: <span id="lowDisplay">—</span></span>
   </div>
 
- <!-- ================= NEWS PANEL ================= -->
-<div id="newsPanel">
-
-  <div id="newsHeader">
-    <span>MARKET NEWS</span>
-    <span id="newsStatus">● MARKET CALM</span>
+  <!-- ================= NEWS PANEL ================= -->
+  <div id="newsPanel">
+    <div id="newsHeader">
+      <span>MARKET NEWS</span>
+      <span id="newsStatus">● MARKET CALM</span>
+    </div>
+    <div id="newsContent">
+      <div class="newsMain">
+        <div id="newsType">NO ACTIVE NEWS</div>
+        <div id="newsTitle">Waiting for market news...</div>
+      </div>
+      <div class="newsDetails">
+        <div class="newsDetail">
+          <span>Impact</span>
+          <strong id="newsImpact">—</strong>
+        </div>
+        <div class="newsDetail">
+          <span>Time</span>
+          <strong id="newsTime">—</strong>
+        </div>
+        <div class="newsDetail">
+          <span>Remaining</span>
+          <strong id="newsRemaining">—</strong>
+        </div>
+      </div>
+    </div>
+    <div id="fixedNewsNotice" role="status"></div>
+    <div class="newsClockNote">News timers pause when the market is stopped.</div>
+    <div id="newsHistoryTitle">LATEST NEWS</div>
+    <div id="newsHistory"></div>
   </div>
 
-  <div id="newsContent">
-
-    <div class="newsMain">
-      <div id="newsType">NO ACTIVE NEWS</div>
-      <div id="newsTitle">Waiting for market news...</div>
-    </div>
-
-    <div class="newsDetails">
-
-      <div class="newsDetail">
-        <span>Impact</span>
-        <strong id="newsImpact">—</strong>
-      </div>
-
-      <div class="newsDetail">
-        <span>Direction</span>
-        <strong id="newsDirection">—</strong>
-      </div>
-
-      <div class="newsDetail">
-        <span>Time</span>
-        <strong id="newsTime">—</strong>
-      </div>
-
-      <div class="newsDetail">
-        <span>Remaining</span>
-        <strong id="newsRemaining">—</strong>
-      </div>
-
-    </div>
-
-  </div>
-
-  <div id="newsHistoryTitle">LATEST NEWS</div>
-  <div id="newsHistory"></div>
-
-</div>
-  
   <br>
   <select id="volatilitySelect">
     <option value="low">Volatility: Low</option>
