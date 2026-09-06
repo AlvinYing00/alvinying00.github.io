@@ -144,6 +144,10 @@ let activeNews = null;
 let nextHotNewsTime = 0;
 let nextFixedNewsTimes = {};
 
+// UI/runtime clock follows simulated market time, not wall-clock time.
+let newsClockSeconds = 0;
+const newsHistoryItems = [];
+
 function randomBetween(min, max) {
     return min + Math.random() * (max - min);
 }
@@ -214,10 +218,16 @@ function startNews(event, type, nowSeconds) {
         shock: 1
     };
 
+    activeNews.startedAtText = new Date().toLocaleTimeString();
+
     console.log("📰 NEWS:", activeNews.name, activeNews);
+    addNewsToHistory(activeNews);
+    updateNewsUI();
 }
 
 function updateNews(nowSeconds) {
+
+    newsClockSeconds = nowSeconds;
 
     // First initialization.
     if (!nextHotNewsTime && !Object.keys(nextFixedNewsTimes).length) {
@@ -272,6 +282,7 @@ function updateNews(nowSeconds) {
         console.log("📰 NEWS ENDED:", activeNews.name);
 
         activeNews = null;
+        updateNewsUI();
     }
 
     // -----------------------------
@@ -280,6 +291,8 @@ function updateNews(nowSeconds) {
     if (activeNews) {
         activeNews.shock *= NEWS_CONFIG.volatility.decay;
     }
+
+    updateNewsUI();
 }
 
 function applyNewsToPriceMove(baseMove, nowSeconds) {
@@ -322,3 +335,165 @@ function getActiveNews() {
 window.getActiveNews = getActiveNews;
 window.updateNews = updateNews;
 window.NEWS_CONFIG = NEWS_CONFIG;
+
+
+// ============================================================
+// NEWS UI
+// ============================================================
+
+function getImpactLabel(impact) {
+    if (impact >= 7) return "EXTREME";
+    if (impact >= 5) return "HIGH";
+    if (impact >= 3) return "MEDIUM";
+    return "LOW";
+}
+
+function getDirectionLabel(direction) {
+    if (direction === 1) return "BULLISH";
+    if (direction === -1) return "BEARISH";
+    return "UNCERTAIN";
+}
+
+function formatSimCountdown(seconds) {
+    if (!Number.isFinite(seconds)) return "—";
+    seconds = Math.max(0, Math.ceil(seconds));
+
+    const minutes = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+
+    if (minutes > 0) {
+        return `${minutes}m ${String(secs).padStart(2, "0")}s`;
+    }
+
+    return `${secs}s`;
+}
+
+function getNextFixedEventInfo() {
+    let nextEvent = null;
+    let nextAt = Infinity;
+
+    NEWS_CONFIG.fixed.events.forEach(event => {
+        const eventTime = nextFixedNewsTimes[event.id];
+        if (Number.isFinite(eventTime) && eventTime < nextAt) {
+            nextAt = eventTime;
+            nextEvent = event;
+        }
+    });
+
+    if (!nextEvent) return "—";
+
+    return `${nextEvent.id} in ${formatSimCountdown(nextAt - newsClockSeconds)}`;
+}
+
+function updateNewsUI() {
+    const panel = document.getElementById("newsPanel");
+    if (!panel) return;
+
+    const typeEl = document.getElementById("newsType");
+    const titleEl = document.getElementById("newsTitle");
+    const categoryEl = document.getElementById("newsCategory");
+    const impactEl = document.getElementById("newsImpact");
+    const directionEl = document.getElementById("newsDirection");
+    const timeEl = document.getElementById("newsTime");
+    const remainingEl = document.getElementById("newsRemaining");
+    const statusEl = document.getElementById("newsStatus");
+    const badgeEl = document.getElementById("newsBadge");
+    const nextFixedEl = document.getElementById("nextFixedNews");
+    const nextHotEl = document.getElementById("nextHotNews");
+
+    if (nextFixedEl) {
+        nextFixedEl.textContent = getNextFixedEventInfo();
+    }
+
+    if (nextHotEl) {
+        nextHotEl.textContent = Number.isFinite(nextHotNewsTime) && nextHotNewsTime > 0
+            ? formatSimCountdown(nextHotNewsTime - newsClockSeconds)
+            : "—";
+    }
+
+    panel.classList.remove("news-calm", "news-fixed-active", "news-hot-active");
+
+    if (!activeNews) {
+        panel.classList.add("news-calm");
+        typeEl.textContent = "NO ACTIVE NEWS";
+        titleEl.textContent = "Market is trading normally.";
+        categoryEl.textContent = "Waiting for the next scheduled or hot-news event.";
+        impactEl.textContent = "—";
+        directionEl.textContent = "—";
+        timeEl.textContent = "—";
+        remainingEl.textContent = "—";
+        statusEl.textContent = "● MARKET CALM";
+        badgeEl.textContent = "CALM";
+        return;
+    }
+
+    const isHot = activeNews.type === "hot";
+    panel.classList.add(isHot ? "news-hot-active" : "news-fixed-active");
+
+    typeEl.textContent = isHot ? "🔥 HOT NEWS" : "📰 FIXED NEWS";
+    titleEl.textContent = activeNews.name;
+    categoryEl.textContent = String(activeNews.category || "market").toUpperCase();
+    impactEl.textContent = getImpactLabel(activeNews.impact);
+    directionEl.textContent = getDirectionLabel(activeNews.direction);
+    timeEl.textContent = activeNews.startedAtText || "Now";
+    remainingEl.textContent = formatSimCountdown(activeNews.endTime - newsClockSeconds);
+    statusEl.textContent = "● NEWS ACTIVE";
+    badgeEl.textContent = isHot ? "HOT" : "FIXED";
+}
+
+function addNewsToHistory(newsItem) {
+    if (!newsItem) return;
+
+    newsHistoryItems.unshift({
+        name: newsItem.name,
+        type: newsItem.type,
+        impact: getImpactLabel(newsItem.impact),
+        direction: getDirectionLabel(newsItem.direction),
+        time: newsItem.startedAtText || new Date().toLocaleTimeString()
+    });
+
+    if (newsHistoryItems.length > 6) {
+        newsHistoryItems.pop();
+    }
+
+    renderNewsHistory();
+}
+
+function renderNewsHistory() {
+    const container = document.getElementById("newsHistory");
+    if (!container) return;
+
+    if (newsHistoryItems.length === 0) {
+        container.innerHTML = '<div class="news-history-empty">No news events yet.</div>';
+        return;
+    }
+
+    container.innerHTML = "";
+
+    newsHistoryItems.forEach(item => {
+        const row = document.createElement("div");
+        row.className = `news-history-item ${item.type === "hot" ? "history-hot" : "history-fixed"}`;
+
+        const name = document.createElement("div");
+        name.className = "news-history-name";
+        name.textContent = item.name;
+
+        const meta = document.createElement("div");
+        meta.className = "news-history-meta";
+        meta.textContent = `${item.type === "hot" ? "HOT" : "FIXED"} · ${item.impact} · ${item.direction}`;
+
+        const time = document.createElement("div");
+        time.className = "news-history-time";
+        time.textContent = item.time;
+
+        row.appendChild(name);
+        row.appendChild(meta);
+        row.appendChild(time);
+        container.appendChild(row);
+    });
+}
+
+// Initial paint. The DOM already exists because news.js is loaded at the
+// bottom of index.html.
+renderNewsHistory();
+updateNewsUI();
