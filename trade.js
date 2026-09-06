@@ -34,8 +34,8 @@ function createEntryLine(trade) {
         color: trade.type === 'BUY' ? '#2196f3' : '#ef4444',
         lineWidth: 2,
         lineStyle: 0,
-        axisLabelVisible: true,
-        title: `${trade.type} #${trade.id} Entry`
+        axisLabelVisible: false,
+        title: ''
     });
 }
 
