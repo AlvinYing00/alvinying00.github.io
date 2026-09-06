@@ -66,9 +66,9 @@ const NEWS_CONFIG = {
         enabled: true,
 
         // Random hot-news rotation.
-        // Example: every 5–12 minutes.
-        minRotationSeconds: 300,
-        maxRotationSeconds: 720,
+        // Once every 20–35 minutes of running market time.
+        minRotationSeconds: 20 * 60,
+        maxRotationSeconds: 35 * 60,
 
         events: [
             {
@@ -129,6 +129,8 @@ const NEWS_CONFIG = {
     // Release shock, partial recovery, then noisy price discovery.
     // Fractions are relative to the release price or initial shock.
     reaction: {
+        // Each event can override these weights using its own impactChances.
+        impactChances: {medium: 0.45, high: 0.40, extreme: 0.15},
         delaySeconds: 2, // News is visible immediately; price shock waits two seconds.
         shockPriceFraction: 0.20, // 20% at impact 4, before variation and limits
         minShockPriceFraction: 0.15,
@@ -217,12 +219,18 @@ function startNews(event, type, nowSeconds) {
               )
             : event.durationSeconds;
 
+    const weights = event.impactChances || NEWS_CONFIG.reaction.impactChances;
+    const roll = Math.random() * (weights.medium + weights.high + weights.extreme);
+    const emotionalImpact = roll < weights.medium ? 'medium'
+        : roll < weights.medium + weights.high ? 'high' : 'extreme';
+
     activeNews = {
         id: event.id,
         name: event.name,
         category: event.category,
         type,
         impact: event.impact,
+        emotionalImpact,
         direction,
         startTime: nowSeconds,
         endTime: nowSeconds + durationSeconds,
@@ -299,10 +307,6 @@ function formatNewsClock(seconds) {
     return `${Math.floor(value / 60)}:${String(value % 60).padStart(2, '0')}`;
 }
 
-function newsImpactLabel(impact) {
-    return impact >= 6 ? 'Extreme' : impact >= 4 ? 'High' : impact >= 2 ? 'Medium' : 'Low';
-}
-
 function renderNews(nowSeconds) {
     if (typeof batchingTicks !== 'undefined' && batchingTicks) return;
     const setText = (id, text) => {
@@ -320,7 +324,6 @@ function renderNews(nowSeconds) {
     setText('newsStatus', activeNews ? '● NEWS ACTIVE' : warnings.length ? '● NEWS INCOMING' : '● MARKET CALM');
     setText('newsType', activeNews ? `${activeNews.type.toUpperCase()} NEWS` : 'NO ACTIVE NEWS');
     setText('newsTitle', activeNews ? activeNews.name : 'Waiting for market news...');
-    setText('newsImpact', activeNews ? newsImpactLabel(activeNews.impact) : '—');
     setText('newsTime', activeNews ? `Market ${formatNewsClock(activeNews.startTime)}` : '—');
     setText('newsRemaining', activeNews ? formatNewsClock(activeNews.endTime - nowSeconds) : '—');
     const notice = document.getElementById('fixedNewsNotice');
@@ -361,9 +364,30 @@ function applyNewsToPriceMove(baseMove, nowSeconds, price) {
         const fraction = Math.max(cfg.minShockPriceFraction, Math.min(cfg.maxShockPriceFraction,
             cfg.shockPriceFraction * getNewsVolatilityMultiplier() / 4 *
             randomBetween(cfg.shockVariationMin, cfg.shockVariationMax)));
-        activeNews.reaction = { anchor: price, size: price * fraction };
+        activeNews.reaction = { anchor: price, size: price * fraction, fraction,
+            secondShockDone: false,
+            recoverySeconds: Math.max(0.25, Math.min(3, (TICKS_PER_CANDLE - candleTickCount - 1) * 0.25)) };
         // One delayed shock tick; candle creation/closure stays with the tick engine.
         return activeNews.direction * activeNews.reaction.size;
+    }
+
+    const reaction = activeNews.reaction;
+    if (activeNews.emotionalImpact === 'extreme' && !reaction.secondShockDone && nowSeconds >= reactionTime + 2) {
+        reaction.secondShockDone = true;
+        const secondSize = price * reaction.fraction;
+        // Same percentage and direction as the first impulse, at the new price.
+        reaction.size = Math.abs(price + activeNews.direction * secondSize - reaction.anchor);
+        return activeNews.direction * secondSize;
+    }
+
+    if (activeNews.emotionalImpact === 'medium') {
+        const elapsed = nowSeconds - reactionTime;
+        const target = reaction.anchor + activeNews.direction * reaction.size * 0.25;
+        if (elapsed <= reaction.recoverySeconds) {
+            const ticksLeft = Math.max(1, Math.ceil((reaction.recoverySeconds - elapsed) / 0.25) + 1);
+            return (target - price) / ticksLeft;
+        }
+        return (target - price) * 0.12 + randomBetween(-1, 1) * reaction.size * 0.025;
     }
 
     const {anchor, size} = activeNews.reaction;
