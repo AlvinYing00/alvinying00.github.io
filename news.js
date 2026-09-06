@@ -135,6 +135,7 @@ const NEWS_CONFIG = {
     // Release shock, partial recovery, then noisy price discovery.
     // Fractions are relative to the release price or initial shock.
     reaction: {
+        delaySeconds: 2,
         shockPriceFraction: 0.025, // 2.5% at impact 4, before random variation
         maxShockPriceFraction: 0.12,
         shockVariationMin: 0.8,
@@ -369,17 +370,21 @@ function applyNewsToPriceMove(baseMove, nowSeconds, price) {
     }
 
     const cfg = NEWS_CONFIG.reaction;
+     const reactionTime = activeNews.startTime + cfg.delaySeconds;
+    if (nowSeconds < reactionTime) {
+        return baseMove * NEWS_CONFIG.volatility.normalMultiplier;
+    }
     if (!activeNews.reaction) {
         const fraction = Math.min(cfg.maxShockPriceFraction,
             cfg.shockPriceFraction * getNewsVolatilityMultiplier() / 4 *
             randomBetween(cfg.shockVariationMin, cfg.shockVariationMax));
         activeNews.reaction = { anchor: price, size: price * fraction };
-        // A single release tick: independent of the normal candle's direction.
+        // One delayed shock tick; candle creation/closure stays with the tick engine.
         return activeNews.direction * activeNews.reaction.size;
     }
 
     const {anchor, size} = activeNews.reaction;
-    const progress = Math.min(1, (nowSeconds - activeNews.startTime) / activeNews.durationSeconds);
+    const progress = Math.min(1, (nowSeconds - reactionTime) / Math.max(0.25, activeNews.endTime - reactionTime));
     const recoveryEnd = cfg.pullbackDurationFraction;
     const retained = progress < recoveryEnd
         ? 1 - cfg.pullbackFraction * progress / recoveryEnd
