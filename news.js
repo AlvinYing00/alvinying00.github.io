@@ -130,11 +130,21 @@ const NEWS_CONFIG = {
         // Extra volatility caused by hot news.
         hotNewsMultiplier: 1.0,
 
-        // Maximum additional random shock per 250ms tick.
-        maxShockFraction: 0.35,
+    },
 
-        // How quickly a news shock fades.
-        decay: 0.94
+    // Release shock, partial recovery, then noisy price discovery.
+    // Fractions are relative to the release price or initial shock.
+    reaction: {
+        shockPriceFraction: 0.025, // 2.5% at impact 4, before random variation
+        maxShockPriceFraction: 0.12,
+        shockVariationMin: 0.8,
+        shockVariationMax: 1.2,
+        pullbackDurationFraction: 0.35,
+        pullbackFraction: 0.45, // recover part of the initial spike
+        finalRetentionFraction: 0.75, // directional bias after recovery
+        reversionPerTick: 0.12,
+        noiseFraction: 0.06, // two-sided noise relative to initial shock
+        finalNoiseMultiplier: 0.35
     }
 };
 
@@ -240,7 +250,7 @@ function startNews(event, type, nowSeconds) {
         startTime: nowSeconds,
         endTime: nowSeconds + durationSeconds,
         durationSeconds,
-        shock: 1
+        reaction: null
     };
 
     newsHistory.unshift({name: event.name, type, startTime: nowSeconds});
@@ -299,12 +309,6 @@ function updateNews(nowSeconds) {
             );
     }
 
-    // -----------------------------
-    // Shock decay
-    // -----------------------------
-    if (activeNews) {
-        activeNews.shock *= NEWS_CONFIG.volatility.decay;
-    }
     renderNews(nowSeconds);
 }
 
@@ -356,32 +360,37 @@ function renderNews(nowSeconds) {
     }
 }
 
-function applyNewsToPriceMove(baseMove, nowSeconds) {
+function applyNewsToPriceMove(baseMove, nowSeconds, price) {
 
     updateNews(nowSeconds);
 
     if (!activeNews) {
-        return baseMove;
+        return baseMove * NEWS_CONFIG.volatility.normalMultiplier;
     }
 
-    const multiplier = getNewsVolatilityMultiplier();
+    const cfg = NEWS_CONFIG.reaction;
+    if (!activeNews.reaction) {
+        const fraction = Math.min(cfg.maxShockPriceFraction,
+            cfg.shockPriceFraction * getNewsVolatilityMultiplier() / 4 *
+            randomBetween(cfg.shockVariationMin, cfg.shockVariationMax));
+        activeNews.reaction = { anchor: price, size: price * fraction };
+        // A single release tick: independent of the normal candle's direction.
+        return activeNews.direction * activeNews.reaction.size;
+    }
 
-    // Directional component.
-    const directionalMove =
-        baseMove * activeNews.direction * multiplier;
-
-    // Additional uncertainty/noise.
-    const shock =
-        Math.random() *
-        Math.abs(baseMove) *
-        multiplier *
-        NEWS_CONFIG.volatility.maxShockFraction *
-        activeNews.shock;
-
-    const uncertainty =
-        randomSign() * shock;
-
-    return directionalMove + uncertainty;
+    const {anchor, size} = activeNews.reaction;
+    const progress = Math.min(1, (nowSeconds - activeNews.startTime) / activeNews.durationSeconds);
+    const recoveryEnd = cfg.pullbackDurationFraction;
+    const retained = progress < recoveryEnd
+        ? 1 - cfg.pullbackFraction * progress / recoveryEnd
+        : (1 - cfg.pullbackFraction) +
+            (cfg.finalRetentionFraction - (1 - cfg.pullbackFraction)) *
+            (progress - recoveryEnd) / (1 - recoveryEnd);
+    const target = anchor + activeNews.direction * size * retained;
+    const noiseScale = 1 - progress * (1 - cfg.finalNoiseMultiplier);
+    const noise = randomBetween(-1, 1) * size * cfg.noiseFraction * noiseScale;
+    // Pull toward a changing reference price, not a fixed one-way tick drift.
+    return (target - price) * cfg.reversionPerTick + noise;
 }
 
 
