@@ -15,7 +15,14 @@ function getSpread(price) {
 }
 
 // Market state
-let marketOpen = true;
+let marketOpen = false;
+
+function notifyTrading(message) {
+    const notification = document.getElementById('tradingNotice');
+    if (!notification) return;
+    document.getElementById('tradingNoticeText').textContent = message;
+    notification.hidden = false;
+}
 
 // Public setter
 function setMarketOpen(state) {
@@ -33,7 +40,7 @@ function createEntryLine(trade) {
         price: trade.entry,
         color: trade.type === 'BUY' ? '#2196f3' : '#ef4444',
         lineWidth: 2,
-        lineStyle: 0,
+        lineStyle: 2, // Dashed
         axisLabelVisible: false,
         title: ''
     });
@@ -47,9 +54,9 @@ function removeEntryLine(trade) {
 
 // ---- Place Orders ----
 function placeBuy() {
-    if (!isMarketOpen()) return alert("Market is closed! Cannot place BUY order.");
-    if (balance <= 0) return alert("Insufficient funds! Balance is 0.");
-    if (!data || data.length < 1) return alert("No market data available.");
+    if (!isMarketOpen()) return notifyTrading("Market is closed! Cannot place BUY order.");
+    if (balance <= 0) return notifyTrading("Insufficient funds! Balance is 0.");
+    if (!data || data.length < 1) return notifyTrading("No market data available.");
 
     const lastPrice =
         typeof currentTickPrice === "number"
@@ -83,9 +90,9 @@ function placeBuy() {
 }
 
 function placeSell() {
-    if (!isMarketOpen()) return alert("Market is closed! Cannot place SELL order.");
-    if (balance <= 0) return alert("Insufficient funds! Balance is 0.");
-    if (!data || data.length < 1) return alert("No market data available.");
+    if (!isMarketOpen()) return notifyTrading("Market is closed! Cannot place SELL order.");
+    if (balance <= 0) return notifyTrading("Insufficient funds! Balance is 0.");
+    if (!data || data.length < 1) return notifyTrading("No market data available.");
 
     const lastPrice =
         typeof currentTickPrice === "number"
@@ -119,6 +126,7 @@ function placeSell() {
 }
 
 function setTP(id) {
+    if (!isMarketOpen()) return notifyTrading('Market is paused. Start the market to manage trades.');
     const trade = positions.find(t => t.id === id && t.open);
     if (!trade) return;
 
@@ -130,6 +138,7 @@ function setTP(id) {
 }
 
 function setSL(id) {
+    if (!isMarketOpen()) return notifyTrading('Market is paused. Start the market to manage trades.');
     const trade = positions.find(t => t.id === id && t.open);
     if (!trade) return;
 
@@ -141,7 +150,8 @@ function setSL(id) {
 }
 
 // ---- Close Trade ----
-function closeTrade(id) {
+function closeTrade(id, automatic = false) {
+    if (!automatic && !isMarketOpen()) return notifyTrading('Market is paused. Start the market to close trades.');
     const trade = positions.find(t => t.id === id && t.open);
     if (!trade) return;
 
@@ -210,12 +220,14 @@ function forceCloseAll() {
         trade.closedAt = new Date().toLocaleTimeString();
     });
 
+    notifyTrading('Insufficient funds. All positions were closed by the margin check.');
     balance = 0.00;
     renderTables();
 }
 
 // ---- Manual Close All ----
 function closeAllTrades() {
+    if (!isMarketOpen()) return notifyTrading('Market is paused. Start the market to close trades.');
     if (!data || data.length === 0) return;
 
     const lastPrice =
@@ -279,6 +291,7 @@ function updateFloatingPL(enforceMargin = true) {
         if (!trade.open) return;
 
         let hit = false;
+        if (!marketOpen) return;
 
         if (trade.type === "BUY") {
             if (trade.tp !== null && lastCandle.high >= trade.tp) {
@@ -300,7 +313,7 @@ function updateFloatingPL(enforceMargin = true) {
     });
 
     // Close outside iteration (safe)
-    tradesToClose.forEach(id => closeTrade(id));
+    tradesToClose.forEach(id => closeTrade(id, true));
 
     // ---- 2️⃣ Recalculate floating P/L ----
     positions.forEach(trade => {
@@ -316,7 +329,7 @@ function updateFloatingPL(enforceMargin = true) {
     });
 
     // ---- 3️⃣ Margin Check ----
-    if (enforceMargin) {
+    if (enforceMargin && marketOpen) {
         const totalFloatingLoss = positions
             .filter(p => p.open && p.profit < 0)
             .reduce((sum, p) => sum + Math.abs(p.profit), 0);
@@ -367,7 +380,7 @@ function renderTables() {
     // ---- Keep Close All visible; enable it when there are open trades ----
     const closeAllBtn = document.getElementById("closeAllBtn");
     if (closeAllBtn) {
-        closeAllBtn.disabled = !hasOpenTrades;
+        closeAllBtn.disabled = !hasOpenTrades || !marketOpen;
     }
 
     // Open Trades
@@ -382,9 +395,9 @@ function renderTables() {
             <td>${data[data.length - 1].close.toFixed(2)}</td>
             <td class="${profitClass}">${trade.profit.toFixed(2)}</td>
             <td>
-                <button onclick="setTP(${trade.id})">TP</button>
-                <button onclick="setSL(${trade.id})">SL</button>
-                <button onclick="closeTrade(${trade.id})">Close</button>
+                <button onclick="setTP(${trade.id})" ${marketOpen ? '' : 'disabled'}>TP</button>
+                <button onclick="setSL(${trade.id})" ${marketOpen ? '' : 'disabled'}>SL</button>
+                <button onclick="closeTrade(${trade.id})" ${marketOpen ? '' : 'disabled'}>Close</button>
             </td>`;
         openTable.appendChild(row);
     });
@@ -419,3 +432,4 @@ window.closeAllTrades = closeAllTrades;
 
 // Initial sync
 balanceDisplay.textContent = balance.toFixed(2);
+
