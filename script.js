@@ -88,13 +88,14 @@ for (const [id, series] of [['showMA50', ma50Series], ['showMA200', ma200Series]
 }
 
 function calculateMA(period, index) {
-  if (index + 1 < period) return null;
+  if (index < 0) return null;
+  const count = Math.min(period, index + 1);
 
   let sum = 0;
-  for (let i = index; i > index - period; i--) {
+  for (let i = index; i > index - count; i--) {
     sum += data[i].close;
   }
-  return sum / period;
+  return sum / count;
 }
 
 function updateMovingAveragesIncremental() {
@@ -221,8 +222,8 @@ function initChart(priceMin = 9, priceMax = 10) {
   }
   candleSeries.setData(data);
   for (const [period, series] of [[50, ma50Series], [200, ma200Series]]) {
-    series.setData(data.slice(period - 1).map((candle, index) => ({
-      time: candle.time, value: calculateMA(period, index + period - 1)
+    series.setData(data.map((candle, index) => ({
+      time: candle.time, value: calculateMA(period, index)
     })));
   }
   currentTickPrice = data[data.length - 1].close;
@@ -491,17 +492,7 @@ function generateCandle() {
   const lastPrice = data[data.length - 1].close;
   let newClose;
 
-  // ---- Very rare random spike (0.0556% chance per candle) ----
-  if (Math.random() < 0.000556) {  // 0.0556% probability
-    const spikeDirection = Math.random() < 0.5 ? -1 : 1; // dump or pump
-    const spikePct = 0.15 + Math.random() * 0.15; // 15%–30%
-    const spikeAmount = lastPrice * spikePct * spikeDirection;
-    newClose = Math.max(0.00001, lastPrice + spikeAmount);
 
-    console.log("💥 SPIKE triggered!", spikeDirection > 0 ? "PUMP" : "DUMP", "to", newClose.toFixed(2));
-
-    return newClose;
-  }
 
   if (retraceTarget !== null && retraceSteps > 0) {
     // Retracement mode (counter-trend)
@@ -763,3 +754,4 @@ window.getCurrentTickPrice = function () {
 
 // ---- START ----
 applyVolatility(currentVolatility);
+
