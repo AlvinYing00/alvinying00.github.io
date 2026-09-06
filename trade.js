@@ -46,6 +46,12 @@ function createEntryLine(trade) {
     });
 }
 
+function formatEntryLabel(trade) {
+    const rounded = Number(trade.profit.toFixed(2));
+    const sign = rounded > 0 ? '+' : rounded < 0 ? '−' : '';
+    return `${trade.type.toLowerCase()} ${sign}$${Math.abs(rounded).toFixed(2)}`;
+}
+
 function removeEntryLine(trade) {
     if (!trade.entryLine) return;
     candleSeries.removePriceLine(trade.entryLine);
