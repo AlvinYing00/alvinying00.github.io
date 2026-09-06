@@ -351,10 +351,10 @@ function renderTables() {
         balanceDisplay.style.color = "white";
     }
 
-    // ---- Close All button visibility ----
+    // ---- Keep Close All visible; enable it when there are open trades ----
     const closeAllBtn = document.getElementById("closeAllBtn");
     if (closeAllBtn) {
-        closeAllBtn.style.display = hasOpenTrades ? "inline-block" : "none";
+        closeAllBtn.disabled = !hasOpenTrades;
     }
 
     // Open Trades
