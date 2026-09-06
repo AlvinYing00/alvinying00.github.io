@@ -9,7 +9,7 @@ const chart = LightweightCharts.createChart(
                  timeScale: {borderColor: '#24303f', timeVisible: true, secondsVisible: true, rightOffset: 5},
                  crosshair: {vertLine: {color: '#60768e', labelBackgroundColor: '#30445b'}, horzLine: {color: '#60768e', labelBackgroundColor: '#30445b'}} });
 const candleSeries = chart.addCandlestickSeries({upColor:'#54d7aa', downColor:'#f3788e', borderVisible:false, wickUpColor:'#54d7aa', wickDownColor:'#f3788e'});
-
+ 
 let data = [];
 let time = 0;
 let marketInterval = null;
