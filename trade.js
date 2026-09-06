@@ -344,7 +344,7 @@ function renderTables() {
             <td>#${trade.id}</td>
             <td>${trade.type}</td>
             <td>${trade.entry.toFixed(2)}</td>
-            <td>${((typeof window.getCurrentTickPrice === 'function' && window.getCurrentTickPrice() != null) ? window.getCurrentTickPrice() : data[data.length - 1].close).toFixed(2)}</td>
+            <td>${data[data.length - 1].close.toFixed(2)}</td>
             <td class="${profitClass}">${trade.profit.toFixed(2)}</td>
             <td>
                 <button onclick="setTP(${trade.id})">TP</button>
