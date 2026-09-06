@@ -28,6 +28,23 @@ function isMarketOpen() {
     return marketOpen;
 }
 
+function createEntryLine(trade) {
+    trade.entryLine = candleSeries.createPriceLine({
+        price: trade.entry,
+        color: trade.type === 'BUY' ? '#2196f3' : '#ef4444',
+        lineWidth: 2,
+        lineStyle: 0,
+        axisLabelVisible: true,
+        title: `${trade.type} #${trade.id} Entry`
+    });
+}
+
+function removeEntryLine(trade) {
+    if (!trade.entryLine) return;
+    candleSeries.removePriceLine(trade.entryLine);
+    trade.entryLine = null;
+}
+
 // ---- Place Orders ----
 function placeBuy() {
     if (!isMarketOpen()) return alert("Market is closed! Cannot place BUY order.");
@@ -58,6 +75,7 @@ function placeBuy() {
     };
 
     positions.push(trade);
+    createEntryLine(trade);
 
     // 🔑 calculate floating P/L immediately
     updateFloatingPL(false);
@@ -93,6 +111,7 @@ function placeSell() {
     };
 
     positions.push(trade);
+    createEntryLine(trade);
 
     // 🔑 calculate floating P/L immediately
     updateFloatingPL(false);
@@ -143,6 +162,7 @@ function closeTrade(id) {
 
     trade.exit = exit;
     trade.open = false;
+    removeEntryLine(trade);
     if (trade.tpLine) {
         candleSeries.removePriceLine(trade.tpLine);
         trade.tpLine = null;
@@ -178,6 +198,7 @@ function forceCloseAll() {
         }
 
         trade.open = false;
+        removeEntryLine(trade);
          if (trade.tpLine) {
             candleSeries.removePriceLine(trade.tpLine);
             trade.tpLine = null;
@@ -218,6 +239,7 @@ function closeAllTrades() {
 
         trade.exit = exit;
         trade.open = false;
+        removeEntryLine(trade);
         trade.closedAt = new Date().toLocaleTimeString();
 
         // Remove TP line
