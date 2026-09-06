@@ -20,54 +20,52 @@
     <span>Low: <span id="lowDisplay">—</span></span>
   </div>
 
-  <!-- ================= MARKET NEWS ================= -->
-  <section id="newsPanel" class="news-panel news-calm" aria-live="polite">
-    <div class="news-header">
-      <div class="news-heading">
-        <span class="news-heading-title">MARKET NEWS</span>
-        <span id="newsBadge" class="news-badge">CALM</span>
+ <!-- ================= NEWS PANEL ================= -->
+<div id="newsPanel">
+
+  <div id="newsHeader">
+    <span>MARKET NEWS</span>
+    <span id="newsStatus">● MARKET CALM</span>
+  </div>
+
+  <div id="newsContent">
+
+    <div class="newsMain">
+      <div id="newsType">NO ACTIVE NEWS</div>
+      <div id="newsTitle">Waiting for market news...</div>
+    </div>
+
+    <div class="newsDetails">
+
+      <div class="newsDetail">
+        <span>Impact</span>
+        <strong id="newsImpact">—</strong>
       </div>
-      <span id="newsStatus" class="news-status">● MARKET CALM</span>
-    </div>
 
-    <div class="news-content">
-      <div class="news-main">
-        <div id="newsType" class="news-type">NO ACTIVE NEWS</div>
-        <div id="newsTitle" class="news-title">Market is trading normally.</div>
-        <div id="newsCategory" class="news-category">Waiting for the next scheduled or hot-news event.</div>
+      <div class="newsDetail">
+        <span>Direction</span>
+        <strong id="newsDirection">—</strong>
       </div>
 
-      <div class="news-details">
-        <div class="news-detail">
-          <span>Impact</span>
-          <strong id="newsImpact">—</strong>
-        </div>
-        <div class="news-detail">
-          <span>Direction</span>
-          <strong id="newsDirection">—</strong>
-        </div>
-        <div class="news-detail">
-          <span>Started</span>
-          <strong id="newsTime">—</strong>
-        </div>
-        <div class="news-detail">
-          <span>Remaining</span>
-          <strong id="newsRemaining">—</strong>
-        </div>
+      <div class="newsDetail">
+        <span>Time</span>
+        <strong id="newsTime">—</strong>
       </div>
+
+      <div class="newsDetail">
+        <span>Remaining</span>
+        <strong id="newsRemaining">—</strong>
+      </div>
+
     </div>
 
-    <div class="news-schedule">
-      <span>Next fixed: <strong id="nextFixedNews">—</strong></span>
-      <span>Next hot: <strong id="nextHotNews">—</strong></span>
-    </div>
+  </div>
 
-    <div class="news-history-title">LATEST NEWS</div>
-    <div id="newsHistory" class="news-history">
-      <div class="news-history-empty">No news events yet.</div>
-    </div>
-  </section>
+  <div id="newsHistoryTitle">LATEST NEWS</div>
+  <div id="newsHistory"></div>
 
+</div>
+  
   <br>
   <select id="volatilitySelect">
     <option value="low">Volatility: Low</option>
