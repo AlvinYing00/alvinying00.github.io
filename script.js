@@ -19,6 +19,10 @@ const CANDLE_INTERVAL_MS = 15000;
 const TICKS_PER_CANDLE = CANDLE_INTERVAL_MS / TICK_INTERVAL_MS;
 
 let tickInterval = null;
+let lastTickWallTime = null;
+let catchUpTimer = null;
+let batchingTicks = false;
+const PRELOAD_CANDLES = 250;
 let candleTickCount = 0;
 let currentTickPrice = null;
 let currentCandle = null;
@@ -193,21 +197,38 @@ function getRetraceThreshold(price) {
   return 0.5 * Math.pow(10, magnitude); // scales threshold with price
 }
 
-// ---- Init first candle ----
+// ---- Random completed history, generated without advancing live/news clocks ----
 function initChart(priceMin = 9, priceMax = 10) { 
-  const initialPrice = priceMin + Math.random() * (priceMax - priceMin); 
-  const firstCandle = { 
-    time: (time += CANDLE_INTERVAL_MS / 1000), 
-    open: initialPrice, 
-    high: initialPrice + 0.0010, 
-    low: initialPrice - 0.0010, 
-    close: initialPrice, 
-  }; 
-  data.push(firstCandle);
+  const initialPrice = priceMin + Math.random() * (priceMax - priceMin);
+  let price = initialPrice;
+  for (let index = 0; index < PRELOAD_CANDLES; index++) {
+    const candle = {time: (time += CANDLE_INTERVAL_MS / 1000), open: price, high: price, low: price, close: price};
+    const drift = (Math.random() - 0.5) * 0.0008;
+    for (let tick = 0; tick < TICKS_PER_CANDLE; tick++) {
+      price *= Math.exp(drift + (Math.random() - 0.5) * 0.006);
+      candle.high = Math.max(candle.high, price);
+      candle.low = Math.min(candle.low, price);
+    }
+    candle.close = price;
+    data.push(candle);
+  }
+  // Keep the live starting price inside the selected volatility range.
+  const scale = initialPrice / price;
+  for (const candle of data) {
+    for (const key of ['open', 'high', 'low', 'close']) candle[key] *= scale;
+  }
   candleSeries.setData(data);
-  currentTickPrice = initialPrice;
-  currentCandle = firstCandle;
+  for (const [period, series] of [[50, ma50Series], [200, ma200Series]]) {
+    series.setData(data.slice(period - 1).map((candle, index) => ({
+      time: candle.time, value: calculateMA(period, index + period - 1)
+    })));
+  }
+  currentTickPrice = data[data.length - 1].close;
+  currentCandle = null;
   candleTickCount = 0;
+  sessionHigh = Math.max(...data.map(candle => candle.high));
+  sessionLow = Math.min(...data.map(candle => candle.low));
+  chart.timeScale().fitContent();
   updatePriceDisplay();
 }
 
@@ -221,6 +242,7 @@ function updatePriceDisplay() {
   if (typeof updateFloatingPL === "function") {
     updateFloatingPL(true);
   }
+  if (batchingTicks) return;
 
   const lastCandle = data[data.length - 1];
   const prevCandle = data[data.length - 2] || lastCandle;
@@ -308,7 +330,7 @@ function beginCandle() {
 
     if (data.length > 3000) {
         data.shift();
-        candleSeries.setData(data);
+        if (!batchingTicks) candleSeries.setData(data);
     }
 }
 
@@ -332,7 +354,9 @@ function updateCurrentCandle(price) {
 
     currentCandle.close = currentTickPrice;
 
-    candleSeries.update(currentCandle);
+    if (!batchingTicks) candleSeries.update(currentCandle);
+    sessionHigh = Math.max(sessionHigh ?? currentTickPrice, currentCandle.high);
+    sessionLow = Math.min(sessionLow ?? currentTickPrice, currentCandle.low);
 
     updatePriceDisplay();
 }
@@ -378,7 +402,7 @@ function generateMarketTick() {
         // Make sure the current candle's final close is exact.
         currentCandle.close = currentTickPrice;
 
-        candleSeries.update(currentCandle);
+        if (!batchingTicks) candleSeries.update(currentCandle);
 
         updateMovingAveragesIncremental();
 
@@ -393,13 +417,49 @@ function startTickEngine() {
 
     if (tickInterval) return;
 
-    // Preserve the active candle and tick count when resuming.
+    // Reset only the wall-clock anchor; pausing never consumes market time.
+    lastTickWallTime = Date.now();
 
     tickInterval = setInterval(
-        generateMarketTick,
+        syncMarketClock,
         TICK_INTERVAL_MS
     );
 }
+
+function syncMarketClock(flush = false) {
+    if (!marketInterval || lastTickWallTime === null) return;
+    const now = Date.now();
+    if (now < lastTickWallTime) { lastTickWallTime = now; return; }
+    const due = Math.floor((now - lastTickWallTime) / TICK_INTERVAL_MS);
+    const count = flush ? due : Math.min(due, 2400);
+    if (!count) return;
+    batchingTicks = count > 1;
+    try {
+        for (let tick = 0; tick < count; tick++) {
+            generateMarketTick();
+            lastTickWallTime += TICK_INTERVAL_MS;
+        }
+    } finally {
+        const needsRefresh = batchingTicks;
+        batchingTicks = false;
+        if (needsRefresh) {
+            candleSeries.setData(data);
+            updatePriceDisplay();
+            renderNews(marketSeconds);
+        }
+    }
+    // Large backlogs yield between batches so the page stays responsive.
+    if (due > count && catchUpTimer === null) {
+        catchUpTimer = setTimeout(() => {
+            catchUpTimer = null;
+            syncMarketClock();
+        }, 0);
+    }
+}
+
+document.addEventListener('visibilitychange', () => syncMarketClock());
+window.addEventListener('focus', () => syncMarketClock());
+window.addEventListener('pageshow', () => syncMarketClock());
 
 function stopTickEngine() {
 
@@ -407,6 +467,9 @@ function stopTickEngine() {
 
     clearInterval(tickInterval);
     tickInterval = null;
+    if (catchUpTimer !== null) clearTimeout(catchUpTimer);
+    catchUpTimer = null;
+    lastTickWallTime = null;
 }
 
 // ---- Auto market generator ----
@@ -514,6 +577,7 @@ function generatePatternCandle() {
 // Start/Stop live market
 function toggleMarket() {
   if (marketInterval) {
+    syncMarketClock(true);
 
     marketInterval = null;
     stopTickEngine();
@@ -594,6 +658,7 @@ function applyVolatility(level) {
     currentTickPrice = null;
     currentCandle = null;
     marketSeconds = 0;
+    if (marketInterval) lastTickWallTime = Date.now();
     resetNews(marketSeconds);
     candleMove = null;
     candleExcursion = 0;
