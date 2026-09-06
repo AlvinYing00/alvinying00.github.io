@@ -76,7 +76,7 @@
     if (!document.hidden && data.length) {
       const width = chart.timeScale().width();
       const height = chartElement.clientHeight - chart.timeScale().height();
-      const entries = positions.filter(p => p.open).map(p => ({id:p.id,type:p.type,y:candleSeries.priceToCoordinate(p.entry)}));
+      const entries = positions.filter(p => p.open).map(p => ({id:p.id,type:p.type,label:formatEntryLabel(p),y:candleSeries.priceToCoordinate(p.entry)}));
       const lines = drawings.map(line => line.type === 'horizontal'
         ? {id:line.id,x1:0,x2:width,y1:candleSeries.priceToCoordinate(line.price),y2:candleSeries.priceToCoordinate(line.price)}
         : {id:line.id,x1:xForTime(line.first.time),x2:xForTime(line.second.time),y1:candleSeries.priceToCoordinate(line.first.price),y2:candleSeries.priceToCoordinate(line.second.price)});
@@ -91,15 +91,14 @@
           element('line', {...line, stroke:String(line.id) === selection.value ? '#ffe5a4' : '#edbe68', 'stroke-width':2});
         }
         if (marker && Number.isFinite(marker.x) && Number.isFinite(marker.y)) element('circle',{cx:marker.x,cy:marker.y,r:4,fill:'#edbe68'});
-        // Move colliding labels along the left edge with a connector to the exact entry.
-        let previousY = -20;
+        // Keep every label at its entry level. Nearby entries intentionally overlap;
+        // render in order so the newest entry appears above older ones.
         entries.filter(p => Number.isFinite(p.y) && p.y >= 0 && p.y <= height)
-          .sort((a,b) => a.y-b.y).forEach(p => {
-            const y = Math.max(11, p.y, previousY + 21); previousY = y;
+          .forEach(p => {
+            const y = p.y;
             const color = p.type === 'BUY' ? '#2196f3' : '#ef4444';
-            element('line',{x1:6,y1:p.y,x2:12,y2:y,stroke:color,'stroke-width':1});
-            element('rect',{x:8,y:y-9,width:78,height:18,rx:3,fill:'#111923',stroke:color});
-            element('text',{x:14,y:y+4,fill:color,'font-size':11,'font-family':'monospace'},`${p.type} #${p.id}`);
+            element('rect',{x:8,y:y-9,width:p.label.length*7+12,height:18,rx:3,fill:'#111923','fill-opacity':0.55,stroke:color,'stroke-opacity':0.7});
+            element('text',{x:14,y:y+4,fill:color,'font-size':11,'font-family':'monospace'},p.label);
           });
       }
     }
