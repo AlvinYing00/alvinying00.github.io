@@ -31,7 +31,7 @@ let currentCandle = null;
 let marketSeconds = 0;
 let candleMove = null;
 let candleExcursion = 0;
-const TICK_PATH_CONFIG = { excursionStrength: 0.65 };
+const TICK_PATH_CONFIG = { excursionStrength: 1.0, movementMultiplier: 1.8 };
 
 const volatilitySelect = document.getElementById('volatilitySelect');
 const priceDisplay = document.getElementById('priceDisplay');
@@ -311,7 +311,7 @@ function triggerRetracement(prevPrice, movedPrice) {
 function generateTickMove() {
     if (candleMove === null) {
         const target = generatePatternCandle();
-        candleMove = (target - currentTickPrice) / TICKS_PER_CANDLE;
+        candleMove = (target - currentTickPrice) * TICK_PATH_CONFIG.movementMultiplier / TICKS_PER_CANDLE;
     }
     return candleMove;
 }
