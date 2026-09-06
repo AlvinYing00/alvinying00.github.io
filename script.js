@@ -3,10 +3,12 @@
 const chartElement = document.getElementById('chart'); 
 const chart = LightweightCharts.createChart(
   chartElement, { width: chartElement.clientWidth, height: chartElement.clientHeight, 
-                 layout: { backgroundColor: '#000000', textColor: '#DDD' }, 
-                 grid: { vertLines: { color: 'transparent' }, 
-                horzLines: { color: 'transparent' } }, });
-const candleSeries = chart.addCandlestickSeries();
+                 layout: { background: {type: 'solid', color: '#111923'}, textColor: '#8b9bb0', fontSize: 11 },
+                 grid: { vertLines: { color: '#1a2532' }, horzLines: { color: '#1a2532' } },
+                 rightPriceScale: {borderColor: '#24303f', autoScale: true, scaleMargins: {top: 0.12, bottom: 0.12}},
+                 timeScale: {borderColor: '#24303f', timeVisible: true, secondsVisible: true, rightOffset: 5},
+                 crosshair: {vertLine: {color: '#60768e', labelBackgroundColor: '#30445b'}, horzLine: {color: '#60768e', labelBackgroundColor: '#30445b'}} });
+const candleSeries = chart.addCandlestickSeries({upColor:'#54d7aa', downColor:'#f3788e', borderVisible:false, wickUpColor:'#54d7aa', wickDownColor:'#f3788e'});
 
 let data = [];
 let time = 0;
@@ -243,6 +245,7 @@ function updatePriceDisplay() {
     updateFloatingPL(true);
   }
   if (batchingTicks) return;
+  updateMarketControls();
 
   const lastCandle = data[data.length - 1];
   const prevCandle = data[data.length - 2] || lastCandle;
@@ -259,11 +262,11 @@ function updatePriceDisplay() {
 
   // Set color (green/red/neutral)
   if (last > prev) {
-    priceDisplay.style.color = 'limegreen';
+    priceDisplay.style.color = '#54d7aa';
   } else if (last < prev) {
-    priceDisplay.style.color = 'red';
+    priceDisplay.style.color = '#ff7b8d';
   } else {
-    priceDisplay.style.color = '#DDD';
+    priceDisplay.style.color = '#e7edf5';
   }
 
   // Track session high/low using full wick values
@@ -411,6 +414,7 @@ function generateMarketTick() {
         candleMove = null;
         candleExcursion = 0;
     }
+    if (!batchingTicks) updateMarketControls();
 }
 
 function startTickEngine() {
@@ -599,6 +603,49 @@ function toggleMarket() {
       window.setMarketOpen(true);
     }
   }
+  updateMarketControls();
+}
+
+function updateMarketControls() {
+  const button = document.getElementById('marketToggle');
+  if (button) button.textContent = marketInterval ? 'Ⅱ Pause market' : '▶ Start market';
+  const status = document.getElementById('marketStatus');
+  if (status) {
+    status.textContent = marketInterval ? '● Market running' : '● Paused';
+    status.className = marketInterval ? 'statusBadge running' : 'statusBadge';
+  }
+  const countdown = document.getElementById('candleCountdown');
+  if (countdown) countdown.textContent = ((TICKS_PER_CANDLE - candleTickCount) * 0.25).toFixed(1) + 's';
+}
+
+function resetPriceScale() {
+  chart.priceScale('right').applyOptions({autoScale:true});
+  document.getElementById('autoScale').checked = true;
+}
+function zoomChart(factor) {
+  const scale = chart.timeScale();
+  const range = scale.getVisibleLogicalRange();
+  if (!range) return;
+  const span = Math.max(15, Math.min(3000, (range.to - range.from) * factor));
+  const center = (range.from + range.to) / 2;
+  scale.setVisibleLogicalRange({from:center - span / 2, to:center + span / 2});
+}
+document.getElementById('zoomIn')?.addEventListener('click', () => zoomChart(0.75));
+document.getElementById('zoomOut')?.addEventListener('click', () => zoomChart(1.35));
+document.getElementById('fitChart')?.addEventListener('click', () => {resetPriceScale(); chart.timeScale().fitContent();});
+document.getElementById('latestChart')?.addEventListener('click', () => {
+  resetPriceScale();
+  chart.timeScale().setVisibleLogicalRange({from:Math.max(0,data.length - 100), to:data.length + 5});
+});
+document.getElementById('autoScale')?.addEventListener('change', e => {
+  chart.priceScale('right').applyOptions({autoScale:e.target.checked});
+});
+// Manual axis scaling disables auto-fit; reflect that in the checkbox.
+chartElement.addEventListener('pointerup', () => {
+  document.getElementById('autoScale').checked = chart.priceScale('right').options().autoScale;
+});
+if (typeof ResizeObserver !== 'undefined') {
+  new ResizeObserver(() => chart.resize(chartElement.clientWidth, chartElement.clientHeight)).observe(chartElement);
 }
 
 function createOrUpdateTPLine(trade) {
