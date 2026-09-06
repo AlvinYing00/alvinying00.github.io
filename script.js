@@ -1,757 +1,421 @@
-//script.js
+// news.js
+// ============================================================
+// NEWS SIMULATION CONFIGURATION
+// ============================================================
+// Edit this file to control:
+// 1. Fixed scheduled news
+// 2. Hot/unexpected news
+// 3. News volatility multipliers
+// 4. News duration
+// 5. Hot-news rotation frequency
+//
+// Price impact is applied by script.js on each 250ms tick.
+// ============================================================
 
-const chartElement = document.getElementById('chart'); 
-const chart = LightweightCharts.createChart(
-  chartElement, { width: chartElement.clientWidth, height: chartElement.clientHeight, 
-                 layout: { background: {type: 'solid', color: '#111923'}, textColor: '#8b9bb0', fontSize: 11 },
-                 grid: { vertLines: { color: '#1a2532' }, horzLines: { color: '#1a2532' } },
-                 rightPriceScale: {borderColor: '#24303f', autoScale: true, scaleMargins: {top: 0.12, bottom: 0.12}},
-                 timeScale: {borderColor: '#24303f', timeVisible: true, secondsVisible: true, rightOffset: 5},
-                 crosshair: {vertLine: {color: '#60768e', labelBackgroundColor: '#30445b'}, horzLine: {color: '#60768e', labelBackgroundColor: '#30445b'}} });
-const candleSeries = chart.addCandlestickSeries({upColor:'#54d7aa', downColor:'#f3788e', borderVisible:false, wickUpColor:'#54d7aa', wickDownColor:'#f3788e'});
+const NEWS_CONFIG = {
 
-let data = [];
-let time = 0;
-let marketInterval = null;
+    // -----------------------------
+    // Fixed news
+    // -----------------------------
+    fixed: {
+        enabled: true,
+        firstDelaySeconds: 60,
+        gapAfterEndSeconds: 15 * 60,
 
-// ---- High-frequency tick engine ----
-// Price moves every 250ms; one chart candle represents 15 seconds.
-const TICK_INTERVAL_MS = 250;
-const CANDLE_INTERVAL_MS = 15000;
-const TICKS_PER_CANDLE = CANDLE_INTERVAL_MS / TICK_INTERVAL_MS;
+        // Events rotate in this order after each release ends.
+        events: [
+            {
+                id: "NFP",
+                name: "US Non-Farm Payrolls (NFP)",
+                category: "employment",
+                impact: 4.0,
+                durationSeconds: 30,
+                surpriseRange: 0.35
+            },
+            {
+                id: "CPI",
+                name: "US Consumer Price Index (CPI)",
+                category: "inflation",
+                impact: 3.5,
+                durationSeconds: 30,
+                surpriseRange: 0.30
+            },
+            {
+                id: "GDP",
+                name: "US GDP",
+                category: "growth",
+                impact: 2.5,
+                durationSeconds: 25,
+                surpriseRange: 0.25
+            },
+            {
+                id: "FOMC",
+                name: "FOMC Interest Rate Decision",
+                category: "rates",
+                impact: 5.0,
+                durationSeconds: 45,
+                surpriseRange: 0.50
+            }
+        ]
+    },
 
-let tickInterval = null;
-let lastTickWallTime = null;
-let catchUpTimer = null;
-let batchingTicks = false;
-const PRELOAD_CANDLES = 250;
-let candleTickCount = 0;
-let currentTickPrice = null;
-let currentCandle = null;
-let marketSeconds = 0;
-let candleMove = null;
-let candleExcursion = 0;
-const TICK_PATH_CONFIG = { excursionStrength: 1.0, movementMultiplier: 1.8 };
+    // -----------------------------
+    // Hot / unexpected news
+    // -----------------------------
+    hot: {
+        enabled: true,
 
-const volatilitySelect = document.getElementById('volatilitySelect');
-const priceDisplay = document.getElementById('priceDisplay');
+        // Random hot-news rotation.
+        // Once every 20–35 minutes of running market time.
+        minRotationSeconds: 20 * 60,
+        maxRotationSeconds: 35 * 60,
 
-// ---- Retracement params ----
-const RETRACE_MIN_FRAC = 0.60;   // 60%
-const RETRACE_MAX_FRAC = 0.80;   // 80%
+        events: [
+            {
+                id: "PRESIDENT_SPEAK",
+                name: "President Gives Unexpected Speech",
+                category: "political",
+                impact: 4.0,
+                minDurationSeconds: 20,
+                maxDurationSeconds: 60,
+                direction: "uncertain"
+            },
+            {
+                id: "GEOPOLITICAL_ATTACK",
+                name: "Major Geopolitical Attack Reported",
+                category: "geopolitical",
+                impact: 6.0,
+                minDurationSeconds: 30,
+                maxDurationSeconds: 90,
+                direction: "uncertain"
+            },
+            {
+                id: "FUND_FREEZE",
+                name: "Country Announces Emergency Fund Freeze",
+                category: "financial",
+                impact: 7.0,
+                minDurationSeconds: 30,
+                maxDurationSeconds: 120,
+                direction: "uncertain"
+            },
+            {
+                id: "EMERGENCY_POLICY",
+                name: "Emergency Economic Policy Announced",
+                category: "economic",
+                impact: 5.0,
+                minDurationSeconds: 25,
+                maxDurationSeconds: 75,
+                direction: "uncertain"
+            }
+        ]
+    },
 
-let retraceTarget = null;
-let retraceSteps = 0; // candles left in retracement
-let currentPattern = null;
-let patternQueue = [];
-let patternCooldown = 0; // countdown in candles
-let currentTrend = null; // "up" or "down"
-let trendSteps = 0;      // remaining candles in trend
-const TREND_CHANCE = 0.15;   // 15% chance to start a trend when idle
-const TREND_MIN_STEPS = 25;   // minimum candles per trend
-const TREND_MAX_STEPS = 50;  // maximum candles per trend
-const TREND_VOL_FACTOR = 0.5; // smooth the trend (less randomness)
+    // -----------------------------
+    // Tick-level volatility
+    // -----------------------------
+    volatility: {
 
-const volatilityConfig = {
-  low:   { priceMin: 9,     priceMax: 10,     balance: 100 },
-  medium:{ priceMin: 90,    priceMax: 100,    balance: 500 },
-  high:  { priceMin: 900,   priceMax: 1000,   balance: 1000 },
-  ultra: { priceMin: 9000,  priceMax: 10000,  balance: 10000 }
+        // Normal market tick movement.
+        normalMultiplier: 1.0,
+
+        // Extra volatility caused by fixed news.
+        fixedNewsMultiplier: 1.0,
+
+        // Extra volatility caused by hot news.
+        hotNewsMultiplier: 1.0,
+
+    },
+
+    // Release shock, partial recovery, then noisy price discovery.
+    // Fractions are relative to the release price or initial shock.
+    reaction: {
+        // Each event can override these weights using its own impactChances.
+        impactChances: {medium: 0.45, high: 0.40, extreme: 0.15},
+        delaySeconds: 2, // News is visible immediately; price shock waits two seconds.
+        shockPriceFraction: 0.20, // 20% at impact 4, before variation and limits
+        minShockPriceFraction: 0.15,
+        maxShockPriceFraction: 0.25,
+        shockVariationMin: 0.8,
+        shockVariationMax: 1.2,
+        pullbackDurationFraction: 0.35,
+        pullbackFraction: 0.45, // recover part of the initial spike
+        finalRetentionFraction: 0.75, // directional bias after recovery
+        reversionPerTick: 0.12,
+        noiseFraction: 0.09, // two-sided noise relative to initial shock
+        finalNoiseMultiplier: 0.35
+    }
 };
 
-let currentVolatility = 'low';
-
-const ma50Series = chart.addLineSeries({
-  color: 'dodgerblue',
-  lineWidth: 2,
-  priceLineVisible: false,
-  lastValueVisible: false,
-});
-
-const ma200Series = chart.addLineSeries({
-  color: 'orange',
-  lineWidth: 2,
-  priceLineVisible: false,
-  lastValueVisible: false,
-});
-
-// Hidden averages keep accumulating completed-candle values.
-for (const [id, series] of [['showMA50', ma50Series], ['showMA200', ma200Series]]) {
-  const checkbox = document.getElementById(id);
-  if (!checkbox) continue;
-  try { checkbox.checked = localStorage.getItem(id) !== 'false'; } catch (_) {}
-  series.applyOptions({ visible: checkbox.checked });
-  checkbox.addEventListener('change', () => {
-    series.applyOptions({ visible: checkbox.checked });
-    try { localStorage.setItem(id, String(checkbox.checked)); } catch (_) {}
-  });
-}
-
-function calculateMA(period, index) {
-  if (index < 0) return null;
-  const count = Math.min(period, index + 1);
-
-  let sum = 0;
-  for (let i = index; i > index - count; i--) {
-    sum += data[i].close;
-  }
-  return sum / count;
-}
-
-function updateMovingAveragesIncremental() {
-  const i = data.length - 1;
-
-  const ma50 = calculateMA(50, i);
-  if (ma50 !== null) {
-    ma50Series.update({
-      time: data[i].time,
-      value: ma50,
-    });
-  }
-
-  const ma200 = calculateMA(200, i);
-  if (ma200 !== null) {
-    ma200Series.update({
-      time: data[i].time,
-      value: ma200,
-    });
-  }
-}
-
-function scheduleNextPattern() {
-  const patterns = ["doubleTop", "doubleBottom", "headShoulders", "triangle", "flag", "wedge"];
-  const choice = patterns[Math.floor(Math.random() * patterns.length)];
-  patternQueue.push(choice);
-  patternCooldown = 120;
-}
-
-function startPattern(name) {
-  const steps = Math.floor(80 + Math.random() * 71); // 80–150 candles
-  currentPattern = { name, steps, totalSteps: steps };
-}
-
-function continuePattern() {
-  if (!currentPattern) return;
-
-  let target;
-  switch(currentPattern.name) {
-    case "doubleTop":
-      target = generateDoubleTopCandle();
-    break;
-    case "doubleBottom":
-      target = generateDoubleBottomCandle();
-    break;
-    case "headShoulders":
-      target = generateHeadAndShouldersCandle();
-    break;
-    case "triangle":
-      target = generateTriangleCandle();
-    break;
-    case "flag":
-      target = generateFlagCandle();
-    break;
-    case "wedge":
-      target = generateWedgeCandle();
-    break;
-  default:
-    target = generateCandle();
-}
-
-  currentPattern.steps--;
-  if (currentPattern.steps <= 0) {
-    console.log("Pattern finished:", currentPattern.name);
-    currentPattern = null;
-    patternCooldown = 120;
-  }
-  return target;
-}
-
-// ---- Format helper ----
-function fmt(num) {
-  return Number(num).toFixed(2); // only 2 decimals
-}
-
-// ---- Dynamic volatility & retrace threshold ----
-let smoothedVol = null;
-
-function getVolatility(price) {
-  // Target range at price ≈ 9.00
-  const MIN_MOVE = price * 0.0055;   // ~0.05 at 9
-  const MAX_MOVE = price * 0.105;    // ~0.95 at 9
-
-  // Heavy-tail distribution (bias toward small moves)
-  const r = Math.random();
-  const skewed = Math.pow(r, 2.5); // higher = rarer big moves
-
-  const rawVol = MIN_MOVE + (MAX_MOVE - MIN_MOVE) * skewed;
-
-  // Smooth volatility regime
-  if (smoothedVol === null) {
-    smoothedVol = rawVol;
-  } else {
-    smoothedVol = smoothedVol * 0.8 + rawVol * 0.2;
-  }
-
-  return smoothedVol;
-}
-
-function getRetraceThreshold(price) {
-  const magnitude = Math.floor(Math.log10(price));
-  return 0.5 * Math.pow(10, magnitude); // scales threshold with price
-}
-
-// ---- Random completed history, generated without advancing live/news clocks ----
-function initChart(priceMin = 9, priceMax = 10) { 
-  const initialPrice = priceMin + Math.random() * (priceMax - priceMin);
-  let price = initialPrice;
-  for (let index = 0; index < PRELOAD_CANDLES; index++) {
-    const candle = {time: (time += CANDLE_INTERVAL_MS / 1000), open: price, high: price, low: price, close: price};
-    const drift = (Math.random() - 0.5) * 0.0008;
-    for (let tick = 0; tick < TICKS_PER_CANDLE; tick++) {
-      price *= Math.exp(drift + (Math.random() - 0.5) * 0.006);
-      candle.high = Math.max(candle.high, price);
-      candle.low = Math.min(candle.low, price);
-    }
-    candle.close = price;
-    data.push(candle);
-  }
-  // Keep the live starting price inside the selected volatility range.
-  const scale = initialPrice / price;
-  for (const candle of data) {
-    for (const key of ['open', 'high', 'low', 'close']) candle[key] *= scale;
-  }
-  candleSeries.setData(data);
-  for (const [period, series] of [[50, ma50Series], [200, ma200Series]]) {
-    series.setData(data.map((candle, index) => ({
-      time: candle.time, value: calculateMA(period, index)
-    })));
-  }
-  currentTickPrice = data[data.length - 1].close;
-  currentCandle = null;
-  candleTickCount = 0;
-  sessionHigh = Math.max(...data.map(candle => candle.high));
-  sessionLow = Math.min(...data.map(candle => candle.low));
-  chart.timeScale().fitContent();
-  updatePriceDisplay();
-}
-
-let sessionHigh = null;
-let sessionLow = null;
-
-function updatePriceDisplay() {
-  if (data.length < 1) return;
-
-  // 🔴 ENFORCE MARGIN ON PRICE UPDATE
-  if (typeof updateFloatingPL === "function") {
-    updateFloatingPL(true);
-  }
-  if (batchingTicks) return;
-  updateMarketControls();
-
-  const lastCandle = data[data.length - 1];
-  const prevCandle = data[data.length - 2] || lastCandle;
-
-  const last = lastCandle.close;
-  const prev = prevCandle.close;
-
-  if (window.renderTables) {
-        window.renderTables();
-  }
-
-  // Update current price
-  priceDisplay.textContent = fmt(last);
-
-  // Set color (green/red/neutral)
-  if (last > prev) {
-    priceDisplay.style.color = '#54d7aa';
-  } else if (last < prev) {
-    priceDisplay.style.color = '#ff7b8d';
-  } else {
-    priceDisplay.style.color = '#e7edf5';
-  }
-
-  // Track session high/low using full wick values
-  if (sessionHigh === null || lastCandle.high > sessionHigh) {
-    sessionHigh = lastCandle.high;
-  }
-  if (sessionLow === null || lastCandle.low < sessionLow) {
-    sessionLow = lastCandle.low;
-  }
-
-  // Update high/low display
-  document.getElementById('highDisplay').textContent = fmt(sessionHigh);
-  document.getElementById('lowDisplay').textContent = fmt(sessionLow);
-}
-
-// ---- Utility: trigger retracement ----
-function triggerRetracement(prevPrice, movedPrice) {
-  const delta = movedPrice - prevPrice;
-  if (Math.abs(delta) < getRetraceThreshold(prevPrice)) return;
-
-  const frac = RETRACE_MIN_FRAC + Math.random() * (RETRACE_MAX_FRAC - RETRACE_MIN_FRAC);
-  retraceTarget = movedPrice - delta * frac;
-  retraceTarget = Math.max(0.00001, retraceTarget);
-
-  retraceSteps = Math.floor(Math.random() * 10) + 10; // 10–19 candles
-
-  console.log('Retrace TRIGGERED:', {
-    prevPrice,
-    movedPrice,
-    delta,
-    frac: Number(frac.toFixed(3)),
-    target: Number(retraceTarget.toFixed(5)),
-    steps: retraceSteps,
-  });
-}
-
 
 // ============================================================
-// TICK ENGINE
+// Runtime news state
 // ============================================================
-// Choose movement once per candle; only the tick engine writes chart data.
-function generateTickMove() {
-    if (candleMove === null) {
-        const target = generatePatternCandle();
-        candleMove = (target - currentTickPrice) * TICK_PATH_CONFIG.movementMultiplier / TICKS_PER_CANDLE;
-    }
-    return candleMove;
+
+let activeNews = null;
+let nextHotNewsTime = 0;
+let nextFixedNewsTimes = {};
+let fixedRotationIndex = 0;
+const FIXED_NEWS_WARNING_SECONDS = 60;
+let newsHistory = [];
+
+function resetNews(nowSeconds) {
+    activeNews = null;
+    newsHistory = [];
+    scheduleInitialNews(nowSeconds);
+    renderNews(nowSeconds);
 }
 
-function beginCandle() {
-    const price = currentTickPrice ?? data[data.length - 1].close;
+function randomBetween(min, max) {
+    return min + Math.random() * (max - min);
+}
 
-    time += CANDLE_INTERVAL_MS / 1000;
+function randomSign() {
+    return Math.random() < 0.5 ? -1 : 1;
+}
 
-    currentCandle = {
-        time,
-        open: price,
-        high: price,
-        low: price,
-        close: price
+function scheduleInitialNews(nowSeconds) {
+
+    nextHotNewsTime =
+        nowSeconds +
+        randomBetween(
+            NEWS_CONFIG.hot.minRotationSeconds,
+            NEWS_CONFIG.hot.maxRotationSeconds
+        );
+
+    fixedRotationIndex = 0;
+    const first = NEWS_CONFIG.fixed.events[0];
+    nextFixedNewsTimes = first ? {[first.id]: nowSeconds + NEWS_CONFIG.fixed.firstDelaySeconds} : {};
+}
+
+function getNewsVolatilityMultiplier() {
+
+    if (!activeNews) {
+        return NEWS_CONFIG.volatility.normalMultiplier;
+    }
+
+    const base =
+        activeNews.type === "hot"
+            ? NEWS_CONFIG.volatility.hotNewsMultiplier
+            : NEWS_CONFIG.volatility.fixedNewsMultiplier;
+
+    return base * activeNews.impact;
+}
+
+function startNews(event, type, nowSeconds) {
+
+    let direction = event.direction || "uncertain";
+
+    if (direction === "uncertain") {
+        direction = randomSign();
+    } else {
+        direction = direction === "up" ? 1 : -1;
+    }
+
+    const durationSeconds =
+        type === "hot"
+            ? randomBetween(
+                event.minDurationSeconds,
+                event.maxDurationSeconds
+              )
+            : event.durationSeconds;
+
+    const weights = event.impactChances || NEWS_CONFIG.reaction.impactChances;
+    const roll = Math.random() * (weights.medium + weights.high + weights.extreme);
+    const emotionalImpact = roll < weights.medium ? 'medium'
+        : roll < weights.medium + weights.high ? 'high' : 'extreme';
+
+    activeNews = {
+        id: event.id,
+        name: event.name,
+        category: event.category,
+        type,
+        impact: event.impact,
+        emotionalImpact,
+        direction,
+        startTime: nowSeconds,
+        endTime: nowSeconds + durationSeconds,
+        durationSeconds,
+        reaction: null
     };
 
-    data.push(currentCandle);
-
-    if (data.length > 3000) {
-        data.shift();
-        if (!batchingTicks) candleSeries.setData(data);
-    }
+    newsHistory.unshift({name: event.name, type, startTime: nowSeconds});
+    newsHistory = newsHistory.slice(0, 6);
 }
 
-function updateCurrentCandle(price) {
+function updateNews(nowSeconds) {
 
-    if (!currentCandle) {
-        beginCandle();
-    }
-
-    currentTickPrice = Math.max(0.00001, price);
-
-    currentCandle.high = Math.max(
-        currentCandle.high,
-        currentTickPrice
-    );
-
-    currentCandle.low = Math.min(
-        currentCandle.low,
-        currentTickPrice
-    );
-
-    currentCandle.close = currentTickPrice;
-
-    if (!batchingTicks) candleSeries.update(currentCandle);
-    sessionHigh = Math.max(sessionHigh ?? currentTickPrice, currentCandle.high);
-    sessionLow = Math.min(sessionLow ?? currentTickPrice, currentCandle.low);
-
-    updatePriceDisplay();
-}
-
-function generateMarketTick() {
-
-    if (!marketInterval) return;
-
-    // 250ms = 0.25 second.
-    marketSeconds += TICK_INTERVAL_MS / 1000;
-
-    // Generate an intended movement from the existing market engine.
-    let move = generateTickMove();
-
-
-    const noiseBase =
-        getVolatility(currentTickPrice || data[data.length - 1].close);
-
-    // A random intrabar excursion that gradually returns toward the candle's
-    // drift path. All highs/lows are real tick prices, never painted-on wicks.
-    const remainingTicks = TICKS_PER_CANDLE - candleTickCount;
-    const nextExcursion = remainingTicks <= 1 ? 0 :
-        candleExcursion * (remainingTicks - 1) / remainingTicks +
-        (Math.random() - 0.5) * 2 * noiseBase *
-        TICK_PATH_CONFIG.excursionStrength / Math.sqrt(TICKS_PER_CANDLE) *
-        Math.sqrt((remainingTicks - 1) / remainingTicks);
-    const tickNoise = nextExcursion - candleExcursion;
-    candleExcursion = nextExcursion;
-
-    const nextPrice =
-        (currentTickPrice || data[data.length - 1].close) +
-        applyNewsToPriceMove(move + tickNoise, marketSeconds, currentTickPrice);
-
-    updateCurrentCandle(nextPrice);
-
-    candleTickCount++;
-
-    // Finalize every 15 seconds.
-    if (candleTickCount >= TICKS_PER_CANDLE) {
-
-        candleTickCount = 0;
-
-        // Make sure the current candle's final close is exact.
-        currentCandle.close = currentTickPrice;
-
-        if (!batchingTicks) candleSeries.update(currentCandle);
-
-        updateMovingAveragesIncremental();
-
-        // Start the next candle on the next tick (or manual price move).
-        currentCandle = null;
-        candleMove = null;
-        candleExcursion = 0;
-    }
-    if (!batchingTicks) updateMarketControls();
-}
-
-function startTickEngine() {
-
-    if (tickInterval) return;
-
-    // Reset only the wall-clock anchor; pausing never consumes market time.
-    lastTickWallTime = Date.now();
-
-    tickInterval = setInterval(
-        syncMarketClock,
-        TICK_INTERVAL_MS
-    );
-}
-
-function syncMarketClock(flush = false) {
-    if (!marketInterval || lastTickWallTime === null) return;
-    const now = Date.now();
-    if (now < lastTickWallTime) { lastTickWallTime = now; return; }
-    const due = Math.floor((now - lastTickWallTime) / TICK_INTERVAL_MS);
-    const count = flush ? due : Math.min(due, 2400);
-    if (!count) return;
-    batchingTicks = count > 1;
-    try {
-        for (let tick = 0; tick < count; tick++) {
-            generateMarketTick();
-            lastTickWallTime += TICK_INTERVAL_MS;
+    if (activeNews && nowSeconds >= activeNews.endTime) {
+        if (activeNews.type === 'fixed' && NEWS_CONFIG.fixed.events.length) {
+            const next = NEWS_CONFIG.fixed.events[fixedRotationIndex];
+            nextFixedNewsTimes = {[next.id]: activeNews.endTime + NEWS_CONFIG.fixed.gapAfterEndSeconds};
         }
-    } finally {
-        const needsRefresh = batchingTicks;
-        batchingTicks = false;
-        if (needsRefresh) {
-            candleSeries.setData(data);
-            updatePriceDisplay();
-            renderNews(marketSeconds);
+        activeNews = null;
+    }
+
+    // First initialization.
+    if (!nextHotNewsTime && !Object.keys(nextFixedNewsTimes).length) {
+        scheduleInitialNews(nowSeconds);
+    }
+
+    // -----------------------------
+    // Fixed news
+    // -----------------------------
+    if (NEWS_CONFIG.fixed.enabled) {
+
+        for (const event of NEWS_CONFIG.fixed.events) {
+
+            if (nowSeconds >= nextFixedNewsTimes[event.id]) {
+
+                startNews(event, "fixed", nowSeconds);
+
+                fixedRotationIndex = (NEWS_CONFIG.fixed.events.indexOf(event) + 1) % NEWS_CONFIG.fixed.events.length;
+                nextFixedNewsTimes = {};
+
+                break;
+            }
         }
     }
-    // Large backlogs yield between batches so the page stays responsive.
-    if (due > count && catchUpTimer === null) {
-        catchUpTimer = setTimeout(() => {
-            catchUpTimer = null;
-            syncMarketClock();
-        }, 0);
+
+    // -----------------------------
+    // Hot news
+    // -----------------------------
+    if (
+        NEWS_CONFIG.hot.enabled &&
+        NEWS_CONFIG.hot.events.length > 0 &&
+        nowSeconds >= nextHotNewsTime &&
+        !activeNews
+    ) {
+
+        const events = NEWS_CONFIG.hot.events;
+        const event = events[Math.floor(Math.random() * events.length)];
+
+        startNews(event, "hot", nowSeconds);
+
+        nextHotNewsTime =
+            nowSeconds +
+            randomBetween(
+                NEWS_CONFIG.hot.minRotationSeconds,
+                NEWS_CONFIG.hot.maxRotationSeconds
+            );
+    }
+
+    renderNews(nowSeconds);
+}
+
+function formatNewsClock(seconds) {
+    const value = Math.max(0, Math.ceil(seconds));
+    return `${Math.floor(value / 60)}:${String(value % 60).padStart(2, '0')}`;
+}
+
+function renderNews(nowSeconds) {
+    if (typeof batchingTicks !== 'undefined' && batchingTicks) return;
+    const setText = (id, text) => {
+        const element = document.getElementById(id);
+        if (element) element.textContent = text;
+    };
+    const upcoming = NEWS_CONFIG.fixed.enabled
+        ? NEWS_CONFIG.fixed.events.map(event => ({event, time: nextFixedNewsTimes[event.id]}))
+            .filter(item => Number.isFinite(item.time)).sort((a,b) => a.time - b.time)
+        : [];
+    const warnings = upcoming.filter(item => item.time - nowSeconds <= FIXED_NEWS_WARNING_SECONDS);
+    const next = upcoming[0];
+    const panel = document.getElementById('newsPanel');
+    if (panel) panel.className = activeNews ? `news-active ${activeNews.type}-news` : '';
+    setText('newsStatus', activeNews ? '● NEWS ACTIVE' : warnings.length ? '● NEWS INCOMING' : '● MARKET CALM');
+    setText('newsType', activeNews ? `${activeNews.type.toUpperCase()} NEWS` : 'NO ACTIVE NEWS');
+    setText('newsTitle', activeNews ? activeNews.name : 'Waiting for market news...');
+    setText('newsTime', activeNews ? `Market ${formatNewsClock(activeNews.startTime)}` : '—');
+    setText('newsRemaining', activeNews ? formatNewsClock(activeNews.endTime - nowSeconds) : '—');
+    const notice = document.getElementById('fixedNewsNotice');
+    if (notice) {
+        notice.className = warnings.length ? 'news-countdown' : '';
+        notice.textContent = warnings.length
+            ? warnings.map(({event,time}) => `${event.name} — ${time <= nowSeconds ? 'Awaiting current news to finish' : `Starts in ${formatNewsClock(time - nowSeconds)}`}`).join(' • ')
+            : next ? `${next.event.name} — Starts in ${formatNewsClock(next.time - nowSeconds)}`
+            : activeNews?.type === 'fixed' ? 'The next fixed-news countdown starts when this release ends.'
+            : 'Fixed news is disabled or no events are scheduled.';
+    }
+    const history = document.getElementById('newsHistory');
+    if (history) {
+        history.innerHTML = '';
+        for (const event of newsHistory) {
+            const row = document.createElement('div');
+            row.className = 'newsHistoryItem';
+            row.textContent = `${event.type.toUpperCase()} · ${event.name} · Market ${formatNewsClock(event.startTime)}`;
+            history.appendChild(row);
+        }
     }
 }
 
-document.addEventListener('visibilitychange', () => syncMarketClock());
-window.addEventListener('focus', () => syncMarketClock());
-window.addEventListener('pageshow', () => syncMarketClock());
+function applyNewsToPriceMove(baseMove, nowSeconds, price) {
 
-function stopTickEngine() {
+    updateNews(nowSeconds);
 
-    if (!tickInterval) return;
-
-    clearInterval(tickInterval);
-    tickInterval = null;
-    if (catchUpTimer !== null) clearTimeout(catchUpTimer);
-    catchUpTimer = null;
-    lastTickWallTime = null;
-}
-
-// ---- Auto market generator ----
-function maybeStartTrend() {
-  if (!currentTrend && Math.random() < TREND_CHANCE) {
-    // 50/50 chance for up or down
-    currentTrend = Math.random() < 0.5 ? "up" : "down";
-    // Trend length (candles) more visible
-    trendSteps = TREND_MIN_STEPS + Math.floor(Math.random() * (TREND_MAX_STEPS - TREND_MIN_STEPS + 1));
-    console.log("Trend started:", currentTrend, "for", trendSteps, "candles");
-  }
-}
-
-function generateCandle() {
-  const lastPrice = data[data.length - 1].close;
-  let newClose;
-
-
-
-  if (retraceTarget !== null && retraceSteps > 0) {
-    // Retracement mode (counter-trend)
-    const remainingDelta = retraceTarget - lastPrice;
-    const baseStep = remainingDelta / retraceSteps;
-    const noiseFactor = Math.abs(baseStep) * 0.5; // smaller noise to keep trend visible
-    let noise = (Math.random() - 0.5) * noiseFactor * 2;
-
-    // Flip chance
-    if ((baseStep < 0 && Math.random() < 0.3) || (baseStep > 0 && Math.random() < 0.3)) {
-      noise = -noise;
+    if (!activeNews) {
+        return baseMove * NEWS_CONFIG.volatility.normalMultiplier;
     }
 
-    newClose = lastPrice + baseStep + noise;
-    retraceSteps--;
-    if (retraceSteps <= 0) {
-      newClose = retraceTarget;
-      retraceTarget = null;
+    const cfg = NEWS_CONFIG.reaction;
+    const reactionTime = activeNews.startTime + cfg.delaySeconds;
+    if (nowSeconds < reactionTime) {
+        return baseMove * NEWS_CONFIG.volatility.normalMultiplier;
+    }
+    if (!activeNews.reaction) {
+        const fraction = Math.max(cfg.minShockPriceFraction, Math.min(cfg.maxShockPriceFraction,
+            cfg.shockPriceFraction * getNewsVolatilityMultiplier() / 4 *
+            randomBetween(cfg.shockVariationMin, cfg.shockVariationMax)));
+        activeNews.reaction = { anchor: price, size: price * fraction, fraction,
+            secondShockDone: false,
+            recoverySeconds: Math.max(0.25, Math.min(3, (TICKS_PER_CANDLE - candleTickCount - 1) * 0.25)) };
+        // One delayed shock tick; candle creation/closure stays with the tick engine.
+        return activeNews.direction * activeNews.reaction.size;
     }
 
-  } else if (currentTrend) {
-    // Apply clear trend
-    const trendDirection = currentTrend === "up" ? 1 : -1;
-    const factor = trendDirection === 1 ? TREND_VOL_FACTOR : TREND_VOL_FACTOR * 1.1;
-    const baseStep = getVolatility(lastPrice) * factor;
-    const noise = (Math.random() - 0.5) * baseStep * 0.2; // smaller noise
-    newClose = Math.max(0.01, lastPrice + baseStep * trendDirection + noise);
-
-    trendSteps--;
-    if (trendSteps <= 0) {
-      console.log("Trend ended:", currentTrend);
-      currentTrend = null;
+    const reaction = activeNews.reaction;
+    if (activeNews.emotionalImpact === 'extreme' && !reaction.secondShockDone && nowSeconds >= reactionTime + 2) {
+        reaction.secondShockDone = true;
+        const secondSize = price * reaction.fraction;
+        // Same percentage and direction as the first impulse, at the new price.
+        reaction.size = Math.abs(price + activeNews.direction * secondSize - reaction.anchor);
+        return activeNews.direction * secondSize;
     }
 
-  } else {
-    // Normal drift
-    const baseVol = getVolatility(lastPrice);
-    const drift = (Math.random() - 0.5) * baseVol;
-    newClose = Math.max(0.01, lastPrice + drift);
-
-    if (Math.abs(drift) >= getRetraceThreshold(lastPrice)) {
-      triggerRetracement(lastPrice, newClose);
-    }
-  }
-
-  return Math.max(0.00001, newClose);
-}
-
-// Manual moves share the active candle and do not advance its clock.
-function applyManualMove(direction) {
-  const raw = document.getElementById('priceInput').value;
-  const value = Number(raw);
-  if (!Number.isFinite(value) || raw.trim() === '') return alert('Enter a valid number.');
-  const previousPrice = currentTickPrice;
-  const targetPrice = Math.max(0.00001, previousPrice + direction * Math.abs(value));
-  if (!Number.isFinite(targetPrice)) return alert('Enter a valid number.');
-  updateCurrentCandle(targetPrice);
-  triggerRetracement(previousPrice, targetPrice);
-}
-
-function pump() { applyManualMove(1); }
-function dump() { applyManualMove(-1); }
-
-function generatePatternCandle() {
-  if (currentPattern) return continuePattern();
-  if (patternCooldown > 0) {
-    patternCooldown--;
-    return generateCandle();
-  }
-  if (patternQueue.length > 0) {
-    startPattern(patternQueue.shift());
-    return continuePattern();
-  }
-  return generateCandle();
-}
-
-// Start/Stop live market
-function toggleMarket() {
-  if (marketInterval) {
-    syncMarketClock(true);
-
-    marketInterval = null;
-    stopTickEngine();
-
-    console.log('Market stopped.');
-
-    if (typeof window.setMarketOpen === "function") {
-      window.setMarketOpen(false);
+    if (activeNews.emotionalImpact === 'medium') {
+        const elapsed = nowSeconds - reactionTime;
+        const target = reaction.anchor + activeNews.direction * reaction.size * 0.25;
+        if (elapsed <= reaction.recoverySeconds) {
+            const ticksLeft = Math.max(1, Math.ceil((reaction.recoverySeconds - elapsed) / 0.25) + 1);
+            return (target - price) / ticksLeft;
+        }
+        return (target - price) * 0.12 + randomBetween(-1, 1) * reaction.size * 0.025;
     }
 
-  } else {
-
-    marketInterval = true;
-    startTickEngine();
-
-    console.log('Market started. Price ticks every 0.25s; candles every 15s.');
-
-    if (typeof window.setMarketOpen === "function") {
-      window.setMarketOpen(true);
-    }
-  }
-  updateMarketControls();
+    const {anchor, size} = activeNews.reaction;
+    const progress = Math.min(1, (nowSeconds - reactionTime) /
+        Math.max(0.25, activeNews.endTime - reactionTime));
+    const recoveryEnd = cfg.pullbackDurationFraction;
+    const retained = progress < recoveryEnd
+        ? 1 - cfg.pullbackFraction * progress / recoveryEnd
+        : (1 - cfg.pullbackFraction) +
+            (cfg.finalRetentionFraction - (1 - cfg.pullbackFraction)) *
+            (progress - recoveryEnd) / (1 - recoveryEnd);
+    const target = anchor + activeNews.direction * size * retained;
+    const noiseScale = 1 - progress * (1 - cfg.finalNoiseMultiplier);
+    const noise = randomBetween(-1, 1) * size * cfg.noiseFraction * noiseScale;
+    // Pull toward a changing reference price, not a fixed one-way tick drift.
+    return (target - price) * cfg.reversionPerTick + noise;
 }
 
-function updateMarketControls() {
-  const button = document.getElementById('marketToggle');
-  if (button) button.textContent = marketInterval ? 'Ⅱ Pause market' : '▶ Start market';
-  const status = document.getElementById('marketStatus');
-  if (status) {
-    status.textContent = marketInterval ? '● Market running' : '● Paused';
-    status.className = marketInterval ? 'statusBadge running' : 'statusBadge';
-  }
-  const countdown = document.getElementById('candleCountdown');
-  if (countdown) countdown.textContent = ((TICKS_PER_CANDLE - candleTickCount) * 0.25).toFixed(1) + 's';
+
+// ============================================================
+// Optional API for UI / debugging
+// ============================================================
+
+function getActiveNews() {
+    return activeNews;
 }
 
-function resetPriceScale() {
-  chart.priceScale('right').applyOptions({autoScale:true});
-  document.getElementById('autoScale').checked = true;
-}
-function zoomChart(factor) {
-  const scale = chart.timeScale();
-  const range = scale.getVisibleLogicalRange();
-  if (!range) return;
-  const span = Math.max(15, Math.min(3000, (range.to - range.from) * factor));
-  const center = (range.from + range.to) / 2;
-  scale.setVisibleLogicalRange({from:center - span / 2, to:center + span / 2});
-}
-document.getElementById('zoomIn')?.addEventListener('click', () => zoomChart(0.75));
-document.getElementById('zoomOut')?.addEventListener('click', () => zoomChart(1.35));
-document.getElementById('fitChart')?.addEventListener('click', () => {resetPriceScale(); chart.timeScale().fitContent();});
-document.getElementById('latestChart')?.addEventListener('click', () => {
-  resetPriceScale();
-  chart.timeScale().setVisibleLogicalRange({from:Math.max(0,data.length - 100), to:data.length + 5});
-});
-document.getElementById('autoScale')?.addEventListener('change', e => {
-  chart.priceScale('right').applyOptions({autoScale:e.target.checked});
-});
-// Manual axis scaling disables auto-fit; reflect that in the checkbox.
-chartElement.addEventListener('pointerup', () => {
-  document.getElementById('autoScale').checked = chart.priceScale('right').options().autoScale;
-});
-if (typeof ResizeObserver !== 'undefined') {
-  new ResizeObserver(() => chart.resize(chartElement.clientWidth, chartElement.clientHeight)).observe(chartElement);
-}
-
-function createOrUpdateTPLine(trade) {
-    if (!trade.tp) return;
-
-    if (trade.tpLine) {
-        trade.tpLine.applyOptions({ price: trade.tp });
-        return;
-    }
-
-    trade.tpLine = candleSeries.createPriceLine({
-        price: trade.tp,
-        color: "green",
-        lineWidth: 2,
-        lineStyle: 0,
-        axisLabelVisible: true,
-        title: `TP #${trade.id}`
-    });
-}
-
-function createOrUpdateSLLine(trade) {
-    if (!trade.sl) return;
-
-    if (trade.slLine) {
-        trade.slLine.applyOptions({ price: trade.sl });
-        return;
-    }
-
-    trade.slLine = candleSeries.createPriceLine({
-        price: trade.sl,
-        color: "red",
-        lineWidth: 2,
-        lineStyle: 0,
-        axisLabelVisible: true,
-        title: `SL #${trade.id}`
-    });
-}
-
-// ---- VOLATILITY ----
-function applyVolatility(level) {
-    currentVolatility = level;
-    const cfg = volatilityConfig[level];
-
-    // Reset state
-    data = [];
-    time = 0;
-    sessionHigh = null;
-    sessionLow = null;
-    retraceTarget = null;
-    retraceSteps = 0;
-    currentPattern = null;
-    patternQueue = [];
-    patternCooldown = 0;
-    currentTrend = null;
-    trendSteps = 0;
-    candleTickCount = 0;
-    currentTickPrice = null;
-    currentCandle = null;
-    marketSeconds = 0;
-    if (marketInterval) lastTickWallTime = Date.now();
-    resetNews(marketSeconds);
-    candleMove = null;
-    candleExcursion = 0;
-    smoothedVol = null;
-
-    // 🔴 RESET CHART SERIES (IMPORTANT)
-    candleSeries.setData([]);
-    ma50Series.setData([]);
-    ma200Series.setData([]);
-
-    balance = cfg.balance;       // now actually takes effect
-  
-    // Update balance in UI right away
-    if (window.renderTables) {
-        window.renderTables(); // make sure your balance table refreshes
-    } else {
-        // fallback: if renderTables not ready, just update manually
-        const balanceDisplay = document.getElementById('balanceDisplay');
-        if (balanceDisplay) balanceDisplay.textContent = balance.toFixed(2);
-    }
-
-    // Init first candle using configured range
-    initChart(cfg.priceMin, cfg.priceMax);
-}
-
-volatilitySelect.addEventListener('change', e => {
-    const selectedVol = e.target.value;
-    
-    // Optional: store selection in localStorage to remember after reload
-    localStorage.setItem('selectedVolatility', selectedVol);
-
-    // Reload the page
-    location.reload();
-});
-
-// On page load, apply saved volatility if any
-window.addEventListener('load', () => {
-    const savedVol = localStorage.getItem('selectedVolatility');
-    if (savedVol) {
-        volatilitySelect.value = savedVol;
-        applyVolatility(savedVol); // initialize with saved volatility
-    }
-});
-
-
-window.addEventListener('resize', () => {
-  chart.resize(chartElement.clientWidth, chartElement.clientHeight);
-});
-
-window.createOrUpdateTPLine = createOrUpdateTPLine;
-window.createOrUpdateSLLine = createOrUpdateSLLine;
-window.getCurrentTickPrice = function () {
-    return currentTickPrice;
-};
-
-// ---- START ----
-applyVolatility(currentVolatility);
+window.getActiveNews = getActiveNews;
+window.updateNews = updateNews;
+window.NEWS_CONFIG = NEWS_CONFIG;
 
