@@ -27,6 +27,9 @@ const NEWS_CONFIG = {
                 id: "NFP",
                 name: "US Non-Farm Payrolls (NFP)",
                 category: "employment",
+                // First release after 60 seconds of running market time.
+                // Later releases continue using intervalSeconds below.
+                firstDelaySeconds: 60,
                 intervalSeconds: 60 * 60,
                 impact: 4.0,
                 durationSeconds: 30,
@@ -143,6 +146,15 @@ const NEWS_CONFIG = {
 let activeNews = null;
 let nextHotNewsTime = 0;
 let nextFixedNewsTimes = {};
+const FIXED_NEWS_WARNING_SECONDS = 60;
+let newsHistory = [];
+
+function resetNews(nowSeconds) {
+    activeNews = null;
+    newsHistory = [];
+    scheduleInitialNews(nowSeconds);
+    renderNews(nowSeconds);
+}
 
 function randomBetween(min, max) {
     return min + Math.random() * (max - min);
@@ -150,6 +162,22 @@ function randomBetween(min, max) {
 
 function randomSign() {
     return Math.random() < 0.5 ? -1 : 1;
+}
+
+// Reserve separate fixed-release slots so each warning reaches its release
+// at zero and each fixed event receives its full active duration.
+function scheduleFixedRelease(event, earliestTime) {
+    let releaseTime = earliestTime;
+    const reserved = NEWS_CONFIG.fixed.events
+        .filter(other => other.id !== event.id && Number.isFinite(nextFixedNewsTimes[other.id]))
+        .map(other => ({start: nextFixedNewsTimes[other.id], end: nextFixedNewsTimes[other.id] + other.durationSeconds}))
+        .sort((a,b) => a.start - b.start);
+    for (const slot of reserved) {
+        if (releaseTime < slot.end && releaseTime + event.durationSeconds > slot.start) {
+            releaseTime = slot.end;
+        }
+    }
+    nextFixedNewsTimes[event.id] = releaseTime;
 }
 
 function scheduleInitialNews(nowSeconds) {
@@ -164,8 +192,9 @@ function scheduleInitialNews(nowSeconds) {
     nextFixedNewsTimes = {};
 
     NEWS_CONFIG.fixed.events.forEach(event => {
-        nextFixedNewsTimes[event.id] =
-            nowSeconds + event.intervalSeconds;
+        scheduleFixedRelease(event,
+            nowSeconds + Math.max(FIXED_NEWS_WARNING_SECONDS,
+                event.firstDelaySeconds ?? event.intervalSeconds));
     });
 }
 
@@ -214,10 +243,13 @@ function startNews(event, type, nowSeconds) {
         shock: 1
     };
 
-    console.log("📰 NEWS:", activeNews.name, activeNews);
+    newsHistory.unshift({name: event.name, type, startTime: nowSeconds});
+    newsHistory = newsHistory.slice(0, 6);
 }
 
 function updateNews(nowSeconds) {
+
+    if (activeNews && nowSeconds >= activeNews.endTime) activeNews = null;
 
     // First initialization.
     if (!nextHotNewsTime && !Object.keys(nextFixedNewsTimes).length) {
@@ -235,7 +267,9 @@ function updateNews(nowSeconds) {
 
                 startNews(event, "fixed", nowSeconds);
 
-                nextFixedNewsTimes[event.id] += event.intervalSeconds;
+                scheduleFixedRelease(event, nowSeconds + Math.max(
+                    FIXED_NEWS_WARNING_SECONDS, event.intervalSeconds, event.durationSeconds
+                ));
 
                 break;
             }
@@ -247,6 +281,7 @@ function updateNews(nowSeconds) {
     // -----------------------------
     if (
         NEWS_CONFIG.hot.enabled &&
+        NEWS_CONFIG.hot.events.length > 0 &&
         nowSeconds >= nextHotNewsTime &&
         !activeNews
     ) {
@@ -265,20 +300,59 @@ function updateNews(nowSeconds) {
     }
 
     // -----------------------------
-    // News expiration
-    // -----------------------------
-    if (activeNews && nowSeconds >= activeNews.endTime) {
-
-        console.log("📰 NEWS ENDED:", activeNews.name);
-
-        activeNews = null;
-    }
-
-    // -----------------------------
     // Shock decay
     // -----------------------------
     if (activeNews) {
         activeNews.shock *= NEWS_CONFIG.volatility.decay;
+    }
+    renderNews(nowSeconds);
+}
+
+function formatNewsClock(seconds) {
+    const value = Math.max(0, Math.ceil(seconds));
+    return `${Math.floor(value / 60)}:${String(value % 60).padStart(2, '0')}`;
+}
+
+function newsImpactLabel(impact) {
+    return impact >= 6 ? 'Extreme' : impact >= 4 ? 'High' : impact >= 2 ? 'Medium' : 'Low';
+}
+
+function renderNews(nowSeconds) {
+    const setText = (id, text) => {
+        const element = document.getElementById(id);
+        if (element) element.textContent = text;
+    };
+    const upcoming = NEWS_CONFIG.fixed.enabled
+        ? NEWS_CONFIG.fixed.events.map(event => ({event, time: nextFixedNewsTimes[event.id]}))
+            .filter(item => Number.isFinite(item.time)).sort((a,b) => a.time - b.time)
+        : [];
+    const warnings = upcoming.filter(item => item.time - nowSeconds <= FIXED_NEWS_WARNING_SECONDS);
+    const next = upcoming[0];
+    const panel = document.getElementById('newsPanel');
+    if (panel) panel.className = activeNews ? `news-active ${activeNews.type}-news` : '';
+    setText('newsStatus', activeNews ? '● NEWS ACTIVE' : warnings.length ? '● NEWS INCOMING' : '● MARKET CALM');
+    setText('newsType', activeNews ? `${activeNews.type.toUpperCase()} NEWS` : 'NO ACTIVE NEWS');
+    setText('newsTitle', activeNews ? activeNews.name : 'Waiting for market news...');
+    setText('newsImpact', activeNews ? newsImpactLabel(activeNews.impact) : '—');
+    setText('newsTime', activeNews ? `Market ${formatNewsClock(activeNews.startTime)}` : '—');
+    setText('newsRemaining', activeNews ? formatNewsClock(activeNews.endTime - nowSeconds) : '—');
+    const notice = document.getElementById('fixedNewsNotice');
+    if (notice) {
+        notice.className = warnings.length ? 'news-countdown' : '';
+        notice.textContent = warnings.length
+            ? warnings.map(({event,time}) => `${event.name} — ${time <= nowSeconds ? 'Awaiting current news to finish' : `Starts in ${formatNewsClock(time - nowSeconds)}`}`).join(' • ')
+            : next ? `Next fixed news: ${next.event.name}. A 60-second countdown will appear before release.`
+            : 'Fixed news is disabled or no events are scheduled.';
+    }
+    const history = document.getElementById('newsHistory');
+    if (history) {
+        history.innerHTML = '';
+        for (const event of newsHistory) {
+            const row = document.createElement('div');
+            row.className = 'newsHistoryItem';
+            row.textContent = `${event.type.toUpperCase()} · ${event.name} · Market ${formatNewsClock(event.startTime)}`;
+            history.appendChild(row);
+        }
     }
 }
 
