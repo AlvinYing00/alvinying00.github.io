@@ -342,13 +342,26 @@ function renderTables() {
     balanceDisplay.textContent = effectiveBalance.toFixed(2);
 
     const hasOpenTrades = positions.some(p => p.open);
+    const uiText = (id, value) => {
+        const element = document.getElementById(id);
+        if (element) element.textContent = value;
+    };
+    uiText('cashBalance', '$' + balance.toFixed(2));
+    uiText('floatingPL', (floatingPL > 0 ? '+$' : floatingPL < 0 ? '−$' : '$') + Math.abs(floatingPL).toFixed(2));
+    const floatingDisplay = document.getElementById('floatingPL');
+    if (floatingDisplay) floatingDisplay.className = floatingPL > 0 ? 'profit' : floatingPL < 0 ? 'loss' : '';
+    uiText('positionCount', String(positions.filter(p => p.open).length));
+    const emptyPositions = document.getElementById('positionsEmpty');
+    if (emptyPositions) emptyPositions.hidden = hasOpenTrades;
+    const emptyHistory = document.getElementById('historyEmpty');
+    if (emptyHistory) emptyHistory.hidden = positions.some(p => !p.open);
 
     if (hasOpenTrades) {
         balanceDisplay.style.color =
-            floatingPL > 0 ? "limegreen" :
-            floatingPL < 0 ? "red" : "white";
+            floatingPL > 0 ? "#54d7aa" :
+            floatingPL < 0 ? "#ff7b8d" : "#e7edf5";
     } else {
-        balanceDisplay.style.color = "white";
+        balanceDisplay.style.color = "#e7edf5";
     }
 
     // ---- Keep Close All visible; enable it when there are open trades ----
@@ -364,7 +377,7 @@ function renderTables() {
         const row = document.createElement("tr");
         row.innerHTML = `
             <td>#${trade.id}</td>
-            <td>${trade.type}</td>
+            <td><span class="tradeSide ${trade.type.toLowerCase()}">${trade.type}</span></td>
             <td>${trade.entry.toFixed(2)}</td>
             <td>${data[data.length - 1].close.toFixed(2)}</td>
             <td class="${profitClass}">${trade.profit.toFixed(2)}</td>
@@ -383,7 +396,7 @@ function renderTables() {
         const row = document.createElement("tr");
         row.innerHTML = `
             <td>#${trade.id}</td>
-            <td>${trade.type}</td>
+            <td><span class="tradeSide ${trade.type.toLowerCase()}">${trade.type}</span></td>
             <td>${trade.entry.toFixed(2)}</td>
             <td>${trade.exit.toFixed(2)}</td>
             <td class="${profitClass}">${trade.profit.toFixed(2)}</td>
