@@ -135,16 +135,17 @@ const NEWS_CONFIG = {
     // Release shock, partial recovery, then noisy price discovery.
     // Fractions are relative to the release price or initial shock.
     reaction: {
-        delaySeconds: 2,
-        shockPriceFraction: 0.025, // 2.5% at impact 4, before random variation
-        maxShockPriceFraction: 0.12,
+        delaySeconds: 2, // News is visible immediately; price shock waits two seconds.
+        shockPriceFraction: 0.20, // 20% at impact 4, before variation and limits
+        minShockPriceFraction: 0.15,
+        maxShockPriceFraction: 0.25,
         shockVariationMin: 0.8,
         shockVariationMax: 1.2,
         pullbackDurationFraction: 0.35,
         pullbackFraction: 0.45, // recover part of the initial spike
         finalRetentionFraction: 0.75, // directional bias after recovery
         reversionPerTick: 0.12,
-        noiseFraction: 0.06, // two-sided noise relative to initial shock
+        noiseFraction: 0.09, // two-sided noise relative to initial shock
         finalNoiseMultiplier: 0.35
     }
 };
@@ -323,6 +324,7 @@ function newsImpactLabel(impact) {
 }
 
 function renderNews(nowSeconds) {
+    if (typeof batchingTicks !== 'undefined' && batchingTicks) return;
     const setText = (id, text) => {
         const element = document.getElementById(id);
         if (element) element.textContent = text;
@@ -370,21 +372,22 @@ function applyNewsToPriceMove(baseMove, nowSeconds, price) {
     }
 
     const cfg = NEWS_CONFIG.reaction;
-     const reactionTime = activeNews.startTime + cfg.delaySeconds;
+    const reactionTime = activeNews.startTime + cfg.delaySeconds;
     if (nowSeconds < reactionTime) {
         return baseMove * NEWS_CONFIG.volatility.normalMultiplier;
     }
     if (!activeNews.reaction) {
-        const fraction = Math.min(cfg.maxShockPriceFraction,
+        const fraction = Math.max(cfg.minShockPriceFraction, Math.min(cfg.maxShockPriceFraction,
             cfg.shockPriceFraction * getNewsVolatilityMultiplier() / 4 *
-            randomBetween(cfg.shockVariationMin, cfg.shockVariationMax));
+            randomBetween(cfg.shockVariationMin, cfg.shockVariationMax)));
         activeNews.reaction = { anchor: price, size: price * fraction };
         // One delayed shock tick; candle creation/closure stays with the tick engine.
         return activeNews.direction * activeNews.reaction.size;
     }
 
     const {anchor, size} = activeNews.reaction;
-    const progress = Math.min(1, (nowSeconds - reactionTime) / Math.max(0.25, activeNews.endTime - reactionTime));
+    const progress = Math.min(1, (nowSeconds - reactionTime) /
+        Math.max(0.25, activeNews.endTime - reactionTime));
     const recoveryEnd = cfg.pullbackDurationFraction;
     const retained = progress < recoveryEnd
         ? 1 - cfg.pullbackFraction * progress / recoveryEnd
