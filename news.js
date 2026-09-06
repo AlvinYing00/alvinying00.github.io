@@ -130,7 +130,7 @@ const NEWS_CONFIG = {
     // Fractions are relative to the release price or initial shock.
     reaction: {
         // Each event can override these weights using its own impactChances.
-        impactChances: {medium: 0.00, high: 1.00, extreme: 0.00},
+        impactChances: {medium: 0.45, high: 0.35, extreme: 0.20},
         delaySeconds: 2, // News is visible immediately; price shock waits two seconds.
         shockPriceFraction: 0.20, // 20% at impact 4, before variation and limits
         minShockPriceFraction: 0.15,
