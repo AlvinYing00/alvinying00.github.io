@@ -76,7 +76,7 @@
     if (!document.hidden && data.length) {
       const width = chart.timeScale().width();
       const height = chartElement.clientHeight - chart.timeScale().height();
-      const entries = positions.filter(p => p.open).map(p => ({id:p.id,type:p.type,label:formatEntryLabel(p),y:candleSeries.priceToCoordinate(p.entry)}));
+      const entries = positions.filter(p => p.open).map(p => ({id:p.id,type:p.type,label:formatEntryLabel(p),profitClass:p.profit >= 0 ? 'profit' : 'loss',y:candleSeries.priceToCoordinate(p.entry)}));
       const lines = drawings.map(line => line.type === 'horizontal'
         ? {id:line.id,x1:0,x2:width,y1:candleSeries.priceToCoordinate(line.price),y2:candleSeries.priceToCoordinate(line.price)}
         : {id:line.id,x1:xForTime(line.first.time),x2:xForTime(line.second.time),y1:candleSeries.priceToCoordinate(line.first.price),y2:candleSeries.priceToCoordinate(line.second.price)});
@@ -98,7 +98,8 @@
             const y = p.y;
             const color = p.type === 'BUY' ? '#2196f3' : '#ef4444';
             element('rect',{x:8,y:y-9,width:p.label.length*7+12,height:18,rx:3,fill:'#111923','fill-opacity':0.55,stroke:color,'stroke-opacity':0.7});
-            element('text',{x:14,y:y+4,fill:color,'font-size':11,'font-family':'monospace'},p.label);
+            // Share the dashboard's P/L classes so both displays always match.
+            element('text',{x:14,y:y+4,class:p.profitClass,fill:'currentColor','font-size':11,'font-family':'monospace'},p.label);
           });
       }
     }
