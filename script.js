@@ -67,6 +67,18 @@ const ma200Series = chart.addLineSeries({
   lastValueVisible: false,
 });
 
+// Hidden averages keep accumulating completed-candle values.
+for (const [id, series] of [['showMA50', ma50Series], ['showMA200', ma200Series]]) {
+  const checkbox = document.getElementById(id);
+  if (!checkbox) continue;
+  try { checkbox.checked = localStorage.getItem(id) !== 'false'; } catch (_) {}
+  series.applyOptions({ visible: checkbox.checked });
+  checkbox.addEventListener('change', () => {
+    series.applyOptions({ visible: checkbox.checked });
+    try { localStorage.setItem(id, String(checkbox.checked)); } catch (_) {}
+  });
+}
+
 function calculateMA(period, index) {
   if (index + 1 < period) return null;
 
@@ -577,6 +589,7 @@ function applyVolatility(level) {
     currentTickPrice = null;
     currentCandle = null;
     marketSeconds = 0;
+    resetNews(marketSeconds);
     candleMove = null;
     smoothedVol = null;
 
