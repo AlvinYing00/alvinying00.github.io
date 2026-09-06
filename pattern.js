@@ -22,18 +22,7 @@ function generateDoubleTopCandle() {
     newClose = lastPrice - getVolatility(lastPrice) * 1.2;
   }
 
-  time++;
-  const open = lastPrice;
-  const bodyHigh = Math.max(open, newClose);
-  const bodyLow = Math.min(open, newClose);
-  const wickTop = bodyHigh + Math.random() * getVolatility(lastPrice) * 0.3;
-  const wickBottom = Math.max(0.01, bodyLow - Math.random() * getVolatility(lastPrice) * 0.3);
-
-  const newCandle = { time, open, high: wickTop, low: wickBottom, close: newClose };
-  data.push(newCandle);
-  if (data.length > 3000) data.shift();
-  candleSeries.setData(data);
-  updatePriceDisplay();
+  return Math.max(0.00001, newClose);
 }
 
 function generateDoubleBottomCandle() {
@@ -58,18 +47,7 @@ function generateDoubleBottomCandle() {
     newClose = lastPrice + getVolatility(lastPrice) * 1.2;
   }
 
-  time++;
-  const open = lastPrice;
-  const bodyHigh = Math.max(open, newClose);
-  const bodyLow = Math.min(open, newClose);
-  const wickTop = bodyHigh + Math.random() * getVolatility(lastPrice) * 0.3;
-  const wickBottom = Math.max(0.01, bodyLow - Math.random() * getVolatility(lastPrice) * 0.3);
-
-  const newCandle = { time, open, high: wickTop, low: wickBottom, close: newClose };
-  data.push(newCandle);
-  if (data.length > 3000) data.shift();
-  candleSeries.setData(data);
-  updatePriceDisplay();
+  return Math.max(0.00001, newClose);
 }
 
 function generateHeadAndShouldersCandle() {
@@ -104,20 +82,7 @@ function generateHeadAndShouldersCandle() {
     newClose = lastPrice - getVolatility(lastPrice) * 1.2;
   }
 
-  // ---- Candle body + wick ----
-  time++;
-  const open = lastPrice;
-  const bodyHigh = Math.max(open, newClose);
-  const bodyLow = Math.min(open, newClose);
-  const wickTop = bodyHigh + Math.random() * getVolatility(lastPrice) * 0.3;
-  const wickBottom = Math.max(0.01, bodyLow - Math.random() * getVolatility(lastPrice) * 0.3);
-
-  const newCandle = { time, open, high: wickTop, low: wickBottom, close: newClose };
-  data.push(newCandle);
-
-  if (data.length > 3000) data.shift();
-  candleSeries.setData(data);
-  updatePriceDisplay();
+  return Math.max(0.00001, newClose);
 }
 
 function generateTriangleCandle() {
@@ -157,26 +122,7 @@ function generateTriangleCandle() {
   const midline = (upper + lower) / 2;
   const newClose = midline + (Math.random() - 0.5) * (upper - lower);
 
-  // Candle construction
-  const open = lastPrice;
-  const bodyHigh = Math.max(open, newClose);
-  const bodyLow = Math.min(open, newClose);
-
-  const wickTop = bodyHigh + Math.random() * currentRange * 0.2;
-  const wickBottom = bodyLow - Math.random() * currentRange * 0.2;
-
-  const newCandle = {
-    time: ++time,
-    open,
-    high: Math.max(open, newClose, wickTop),
-    low: Math.min(open, newClose, wickBottom),
-    close: newClose
-  };
-
-  data.push(newCandle);
-  if (data.length > 3000) data.shift();
-  candleSeries.setData(data);
-  updatePriceDisplay();
+  return Math.max(0.00001, newClose);
 }
 
 // ---- Flag Pattern ----
@@ -210,26 +156,7 @@ function generateFlagCandle() {
     newClose = dir === "up" ? lastPrice + getVolatility(lastPrice) * 1.5 : lastPrice - getVolatility(lastPrice) * 1.5;
   }
 
-  // ---- Candle body + wick ----
-  time++;
-  const open = lastPrice;
-  const bodyHigh = Math.max(open, newClose);
-  const bodyLow = Math.min(open, newClose);
-  const wickTop = Math.max(open, newClose, bodyHigh + Math.random() * getVolatility(lastPrice) * 0.3);
-  const wickBottom = Math.min(open, newClose, Math.max(0.01, bodyLow - Math.random() * getVolatility(lastPrice) * 0.3));
-
-  const newCandle = {
-    time,
-    open,
-    high: wickTop,
-    low: wickBottom,
-    close: newClose
-  };
-
-  data.push(newCandle);
-  if (data.length > 3000) data.shift();
-  candleSeries.setData(data);
-  updatePriceDisplay();
+  return Math.max(0.00001, newClose);
 }
 
 // ---- Wedge Pattern ----
@@ -261,24 +188,5 @@ function generateWedgeCandle() {
     newClose = lastPrice - wedgeVol * 0.7 + Math.random() * wedgeVol * 0.3;
   }
 
-  // ---- Candle body + wick ----
-  time++;
-  const open = lastPrice;
-  const bodyHigh = Math.max(open, newClose);
-  const bodyLow = Math.min(open, newClose);
-  const wickTop = Math.max(open, newClose, bodyHigh + Math.random() * wedgeVol * 0.3);
-  const wickBottom = Math.min(open, newClose, Math.max(0.01, bodyLow - Math.random() * wedgeVol * 0.3));
-
-  const newCandle = {
-    time,
-    open,
-    high: wickTop,
-    low: wickBottom,
-    close: newClose
-  };
-
-  data.push(newCandle);
-  if (data.length > 3000) data.shift();
-  candleSeries.setData(data);
-  updatePriceDisplay();
+  return Math.max(0.00001, newClose);
 }
