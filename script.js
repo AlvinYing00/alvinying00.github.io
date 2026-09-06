@@ -24,6 +24,8 @@ let currentTickPrice = null;
 let currentCandle = null;
 let marketSeconds = 0;
 let candleMove = null;
+let candleExcursion = 0;
+const TICK_PATH_CONFIG = { excursionStrength: 0.65 };
 
 const volatilitySelect = document.getElementById('volatilitySelect');
 const priceDisplay = document.getElementById('priceDisplay');
@@ -286,9 +288,7 @@ function generateTickMove() {
         const target = generatePatternCandle();
         candleMove = (target - currentTickPrice) / TICKS_PER_CANDLE;
     }
-    return typeof applyNewsToPriceMove === "function"
-        ? applyNewsToPriceMove(candleMove, marketSeconds)
-        : candleMove;
+    return candleMove;
 }
 
 function beginCandle() {
@@ -351,16 +351,20 @@ function generateMarketTick() {
     const noiseBase =
         getVolatility(currentTickPrice || data[data.length - 1].close);
 
-    // Small continuous tick noise makes the price visibly alive.
-    const tickNoise =
-        (Math.random() - 0.5) *
-        noiseBase *
-        0.08;
+    // A random intrabar excursion that gradually returns toward the candle's
+    // drift path. All highs/lows are real tick prices, never painted-on wicks.
+    const remainingTicks = TICKS_PER_CANDLE - candleTickCount;
+    const nextExcursion = remainingTicks <= 1 ? 0 :
+        candleExcursion * (remainingTicks - 1) / remainingTicks +
+        (Math.random() - 0.5) * 2 * noiseBase *
+        TICK_PATH_CONFIG.excursionStrength / Math.sqrt(TICKS_PER_CANDLE) *
+        Math.sqrt((remainingTicks - 1) / remainingTicks);
+    const tickNoise = nextExcursion - candleExcursion;
+    candleExcursion = nextExcursion;
 
     const nextPrice =
         (currentTickPrice || data[data.length - 1].close) +
-        move +
-        tickNoise;
+        applyNewsToPriceMove(move + tickNoise, marketSeconds, currentTickPrice);
 
     updateCurrentCandle(nextPrice);
 
@@ -381,6 +385,7 @@ function generateMarketTick() {
         // Start the next candle on the next tick (or manual price move).
         currentCandle = null;
         candleMove = null;
+        candleExcursion = 0;
     }
 }
 
@@ -591,6 +596,7 @@ function applyVolatility(level) {
     marketSeconds = 0;
     resetNews(marketSeconds);
     candleMove = null;
+    candleExcursion = 0;
     smoothedVol = null;
 
     // 🔴 RESET CHART SERIES (IMPORTANT)
