@@ -19,18 +19,15 @@ const NEWS_CONFIG = {
     // -----------------------------
     fixed: {
         enabled: true,
+        firstDelaySeconds: 60,
+        gapAfterEndSeconds: 15 * 60,
 
-        // How often the simulator checks for fixed news.
-        // The actual events below use the candle/tick clock.
+        // Events rotate in this order after each release ends.
         events: [
             {
                 id: "NFP",
                 name: "US Non-Farm Payrolls (NFP)",
                 category: "employment",
-                // First release after 60 seconds of running market time.
-                // Later releases continue using intervalSeconds below.
-                firstDelaySeconds: 60,
-                intervalSeconds: 60 * 60,
                 impact: 4.0,
                 durationSeconds: 30,
                 surpriseRange: 0.35
@@ -39,7 +36,6 @@ const NEWS_CONFIG = {
                 id: "CPI",
                 name: "US Consumer Price Index (CPI)",
                 category: "inflation",
-                intervalSeconds: 60 * 90,
                 impact: 3.5,
                 durationSeconds: 30,
                 surpriseRange: 0.30
@@ -48,7 +44,6 @@ const NEWS_CONFIG = {
                 id: "GDP",
                 name: "US GDP",
                 category: "growth",
-                intervalSeconds: 60 * 120,
                 impact: 2.5,
                 durationSeconds: 25,
                 surpriseRange: 0.25
@@ -57,7 +52,6 @@ const NEWS_CONFIG = {
                 id: "FOMC",
                 name: "FOMC Interest Rate Decision",
                 category: "rates",
-                intervalSeconds: 60 * 150,
                 impact: 5.0,
                 durationSeconds: 45,
                 surpriseRange: 0.50
@@ -158,6 +152,7 @@ const NEWS_CONFIG = {
 let activeNews = null;
 let nextHotNewsTime = 0;
 let nextFixedNewsTimes = {};
+let fixedRotationIndex = 0;
 const FIXED_NEWS_WARNING_SECONDS = 60;
 let newsHistory = [];
 
@@ -176,22 +171,6 @@ function randomSign() {
     return Math.random() < 0.5 ? -1 : 1;
 }
 
-// Reserve separate fixed-release slots so each warning reaches its release
-// at zero and each fixed event receives its full active duration.
-function scheduleFixedRelease(event, earliestTime) {
-    let releaseTime = earliestTime;
-    const reserved = NEWS_CONFIG.fixed.events
-        .filter(other => other.id !== event.id && Number.isFinite(nextFixedNewsTimes[other.id]))
-        .map(other => ({start: nextFixedNewsTimes[other.id], end: nextFixedNewsTimes[other.id] + other.durationSeconds}))
-        .sort((a,b) => a.start - b.start);
-    for (const slot of reserved) {
-        if (releaseTime < slot.end && releaseTime + event.durationSeconds > slot.start) {
-            releaseTime = slot.end;
-        }
-    }
-    nextFixedNewsTimes[event.id] = releaseTime;
-}
-
 function scheduleInitialNews(nowSeconds) {
 
     nextHotNewsTime =
@@ -201,13 +180,9 @@ function scheduleInitialNews(nowSeconds) {
             NEWS_CONFIG.hot.maxRotationSeconds
         );
 
-    nextFixedNewsTimes = {};
-
-    NEWS_CONFIG.fixed.events.forEach(event => {
-        scheduleFixedRelease(event,
-            nowSeconds + Math.max(FIXED_NEWS_WARNING_SECONDS,
-                event.firstDelaySeconds ?? event.intervalSeconds));
-    });
+    fixedRotationIndex = 0;
+    const first = NEWS_CONFIG.fixed.events[0];
+    nextFixedNewsTimes = first ? {[first.id]: nowSeconds + NEWS_CONFIG.fixed.firstDelaySeconds} : {};
 }
 
 function getNewsVolatilityMultiplier() {
@@ -261,7 +236,13 @@ function startNews(event, type, nowSeconds) {
 
 function updateNews(nowSeconds) {
 
-    if (activeNews && nowSeconds >= activeNews.endTime) activeNews = null;
+    if (activeNews && nowSeconds >= activeNews.endTime) {
+        if (activeNews.type === 'fixed' && NEWS_CONFIG.fixed.events.length) {
+            const next = NEWS_CONFIG.fixed.events[fixedRotationIndex];
+            nextFixedNewsTimes = {[next.id]: activeNews.endTime + NEWS_CONFIG.fixed.gapAfterEndSeconds};
+        }
+        activeNews = null;
+    }
 
     // First initialization.
     if (!nextHotNewsTime && !Object.keys(nextFixedNewsTimes).length) {
@@ -279,9 +260,8 @@ function updateNews(nowSeconds) {
 
                 startNews(event, "fixed", nowSeconds);
 
-                scheduleFixedRelease(event, nowSeconds + Math.max(
-                    FIXED_NEWS_WARNING_SECONDS, event.intervalSeconds, event.durationSeconds
-                ));
+                fixedRotationIndex = (NEWS_CONFIG.fixed.events.indexOf(event) + 1) % NEWS_CONFIG.fixed.events.length;
+                nextFixedNewsTimes = {};
 
                 break;
             }
@@ -348,7 +328,8 @@ function renderNews(nowSeconds) {
         notice.className = warnings.length ? 'news-countdown' : '';
         notice.textContent = warnings.length
             ? warnings.map(({event,time}) => `${event.name} — ${time <= nowSeconds ? 'Awaiting current news to finish' : `Starts in ${formatNewsClock(time - nowSeconds)}`}`).join(' • ')
-            : next ? `Next fixed news: ${next.event.name}. A 60-second countdown will appear before release.`
+            : next ? `${next.event.name} — Starts in ${formatNewsClock(next.time - nowSeconds)}`
+            : activeNews?.type === 'fixed' ? 'The next fixed-news countdown starts when this release ends.'
             : 'Fixed news is disabled or no events are scheduled.';
     }
     const history = document.getElementById('newsHistory');
@@ -413,3 +394,4 @@ function getActiveNews() {
 window.getActiveNews = getActiveNews;
 window.updateNews = updateNews;
 window.NEWS_CONFIG = NEWS_CONFIG;
+
