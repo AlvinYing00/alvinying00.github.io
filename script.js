@@ -543,6 +543,7 @@ function generateCandle() {
 
 // Manual moves share the active candle and do not advance its clock.
 function applyManualMove(direction) {
+  if (!marketInterval) return notifyTrading('Market is paused. Start the market to use Pump or Dump.');
   const raw = document.getElementById('priceInput').value;
   const value = Number(raw);
   if (!Number.isFinite(value) || raw.trim() === '') return alert('Enter a valid number.');
@@ -598,6 +599,10 @@ function toggleMarket() {
 }
 
 function updateMarketControls() {
+  for (const id of ['pumpBtn', 'dumpBtn']) {
+    const control = document.getElementById(id);
+    if (control) control.disabled = !marketInterval;
+  }
   const button = document.getElementById('marketToggle');
   if (button) button.textContent = marketInterval ? 'Ⅱ Pause market' : '▶ Start market';
   const status = document.getElementById('marketStatus');
