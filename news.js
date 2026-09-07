@@ -127,13 +127,13 @@ const NEWS_CONFIG = {
     // Fractions are relative to the release price or initial shock.
     reaction: {
         continuationChance: 0.6, // High/Extreme follow-through probability.
-        continuationReversalChance: 0.6, // Independent countertrend detour within eligible follow-through.
+        continuationReversalChance: 0.7, // Independent countertrend detour within eligible follow-through.
         falseBreakoutChance: 0.5, // Eligible breakouts that fail and finish against the breakout.
         extremeSecondSpikeDelaySeconds: 4, // Measured from the first spike.
         extremeSecondSpikeFraction: 0.5, // Half the first spike's absolute price change.
         continuationSeconds: 120,
         // Each event can override these weights using its own impactChances.
-        impactChances: {medium: 0.45, high: 0.35, extreme: 0.20},
+        impactChances: {medium: 0.34, high: 0.33, extreme: 0.33},
         delaySeconds: 2, // News is visible immediately; price shock waits two seconds.
         panicMinTickFraction: 0.012, // Pre-spike moves: 1.2–3.5% of release price per tick.
         panicMaxTickFraction: 0.035,
