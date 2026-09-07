@@ -16,12 +16,29 @@ function getSpread(price) {
 
 // Market state
 let marketOpen = false;
+let notificationFadeTimer = null;
+let notificationHideTimer = null;
+
+function dismissTradingNotice() {
+    clearTimeout(notificationFadeTimer);
+    clearTimeout(notificationHideTimer);
+    notificationFadeTimer = null;
+    notificationHideTimer = null;
+    const notification = document.getElementById('tradingNotice');
+    if (notification) notification.hidden = true;
+}
 
 function notifyTrading(message) {
     const notification = document.getElementById('tradingNotice');
     if (!notification) return;
+    dismissTradingNotice();
     document.getElementById('tradingNoticeText').textContent = message;
+    notification.style.opacity = '1';
     notification.hidden = false;
+    notificationFadeTimer = setTimeout(() => {
+        notification.style.opacity = '0';
+        notificationHideTimer = setTimeout(dismissTradingNotice, 300);
+    }, 7000);
 }
 
 // Public setter
