@@ -156,29 +156,46 @@ function placeSell() {
     renderTables();
 }
 
-function setTP(id) {
+let exitPriceEditor = null;
+
+function openExitPriceEditor(id, kind) {
     if (!isMarketOpen()) return notifyTrading('Market is paused. Start the market to manage trades.');
     const trade = positions.find(t => t.id === id && t.open);
     if (!trade) return;
 
-    const value = parseFloat(prompt("Enter TP price:"));
-    if (isNaN(value)) return;
-
-    trade.tp = value;
-    createOrUpdateTPLine(trade);
+    exitPriceEditor = {id, kind};
+    document.getElementById('exitPriceTitle').textContent = `${kind === 'tp' ? 'Take profit' : 'Stop loss'} · ${trade.type} #${id}`;
+    const input = document.getElementById('exitPriceInput');
+    input.value = trade[kind] ?? '';
+    document.getElementById('exitPricePanel').hidden = false;
+    input.focus?.();
 }
 
-function setSL(id) {
+function closeExitPriceEditor() {
+    document.getElementById('exitPricePanel').hidden = true;
+    exitPriceEditor = null;
+}
+
+function saveExitPrice() {
+    if (!exitPriceEditor) return;
     if (!isMarketOpen()) return notifyTrading('Market is paused. Start the market to manage trades.');
+    const {id, kind} = exitPriceEditor;
     const trade = positions.find(t => t.id === id && t.open);
-    if (!trade) return;
-
-    const value = parseFloat(prompt("Enter SL price:"));
-    if (isNaN(value)) return;
-
-    trade.sl = value;
-    createOrUpdateSLLine(trade);
+    if (!trade) {
+        closeExitPriceEditor();
+        return notifyTrading('This trade has already closed.');
+    }
+    const raw = document.getElementById('exitPriceInput').value.trim();
+    const value = Number(raw);
+    if (!raw || !Number.isFinite(value) || value <= 0) return notifyTrading('Enter a valid price greater than zero.');
+    trade[kind] = value;
+    if (kind === 'tp') createOrUpdateTPLine(trade);
+    else createOrUpdateSLLine(trade);
+    closeExitPriceEditor();
 }
+
+function setTP(id) { openExitPriceEditor(id, 'tp'); }
+function setSL(id) { openExitPriceEditor(id, 'sl'); }
 
 // ---- Close Trade ----
 function closeTrade(id, automatic = false) {
