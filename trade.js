@@ -35,6 +35,14 @@ function isMarketOpen() {
     return marketOpen;
 }
 
+function resetAccountBalance() {
+    if (!isMarketOpen()) return notifyTrading('Start the market before resetting your balance.');
+    if (positions.some(trade => trade.open)) return notifyTrading('Close all open trades before resetting your balance.');
+    balance = volatilityConfig[currentVolatility].balance;
+    renderTables();
+    notifyTrading(`Balance reset to $${balance.toFixed(2)}.`);
+}
+
 function createEntryLine(trade) {
     trade.entryLine = candleSeries.createPriceLine({
         price: trade.entry,
