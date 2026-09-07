@@ -133,7 +133,7 @@ const NEWS_CONFIG = {
         extremeSecondSpikeFraction: 0.5, // Half the first spike's absolute price change.
         continuationSeconds: 120,
         // Each event can override these weights using its own impactChances.
-        impactChances: {medium: 0.00, high: 1.00, extreme: 0.00},
+        impactChances: {medium: 0.50, high: 0.30, extreme: 0.20},
         delaySeconds: 2, // News is visible immediately; price shock waits two seconds.
         panicMinTickFraction: 0.012, // Pre-spike moves: 1.2–3.5% of release price per tick.
         panicMaxTickFraction: 0.035,
