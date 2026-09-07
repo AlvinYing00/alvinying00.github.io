@@ -9,7 +9,7 @@ const chart = LightweightCharts.createChart(
                  timeScale: {borderColor: '#24303f', timeVisible: true, secondsVisible: true, rightOffset: 5},
                  crosshair: {vertLine: {color: '#60768e', labelBackgroundColor: '#30445b'}, horzLine: {color: '#60768e', labelBackgroundColor: '#30445b'}} });
 const candleSeries = chart.addCandlestickSeries({upColor:'#54d7aa', downColor:'#f3788e', borderVisible:false, wickUpColor:'#54d7aa', wickDownColor:'#f3788e'});
- 
+
 let data = [];
 let time = 0;
 let marketInterval = null;
@@ -409,6 +409,7 @@ function generateMarketTick() {
         if (!batchingTicks) candleSeries.update(currentCandle);
 
         updateMovingAveragesIncremental();
+        onNewsCandleClosed(currentCandle, marketSeconds);
 
         // Start the next candle on the next tick (or manual price move).
         currentCandle = null;
@@ -546,10 +547,10 @@ function applyManualMove(direction) {
   if (!marketInterval) return notifyTrading('Market is paused. Start the market to use Pump or Dump.');
   const raw = document.getElementById('priceInput').value;
   const value = Number(raw);
-  if (!Number.isFinite(value) || raw.trim() === '') return alert('Enter a valid number.');
+  if (!Number.isFinite(value) || raw.trim() === '') return notifyTrading('Enter a valid number for the manual price move.');
   const previousPrice = currentTickPrice;
   const targetPrice = Math.max(0.00001, previousPrice + direction * Math.abs(value));
-  if (!Number.isFinite(targetPrice)) return alert('Enter a valid number.');
+  if (!Number.isFinite(targetPrice)) return notifyTrading('Enter a valid number for the manual price move.');
   updateCurrentCandle(targetPrice);
   triggerRetracement(previousPrice, targetPrice);
 }
