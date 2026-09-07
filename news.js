@@ -143,6 +143,8 @@ const NEWS_CONFIG = {
         shockVariationMax: 1.2,
         pullbackDurationFraction: 0.35,
         pullbackFraction: 0.45, // recover part of the initial spike
+        mediumPullbackMin: 0.45,
+        mediumPullbackMax: 0.75,
         finalRetentionFraction: 0.75, // directional bias after recovery
         reversionPerTick: 0.12,
         noiseFraction: 0.09, // two-sided noise relative to initial shock
@@ -417,6 +419,8 @@ function applyNewsToPriceMove(baseMove, nowSeconds, price) {
             cfg.shockPriceFraction * getNewsVolatilityMultiplier() / 4 *
             randomBetween(cfg.shockVariationMin, cfg.shockVariationMax)));
         activeNews.reaction = { anchor: price, size: price * fraction, fraction,
+            mediumPullbackFraction: activeNews.emotionalImpact === 'medium'
+                ? randomBetween(cfg.mediumPullbackMin, cfg.mediumPullbackMax) : null,
             secondShockDone: false,
             spikeTimes: [currentCandle ? currentCandle.time : time + CANDLE_INTERVAL_MS / 1000],
             recoverySeconds: Math.max(0.25, (TICKS_PER_CANDLE - candleTickCount - 1) * 0.25) };
@@ -436,7 +440,7 @@ function applyNewsToPriceMove(baseMove, nowSeconds, price) {
 
     if (activeNews.emotionalImpact === 'medium') {
         const elapsed = nowSeconds - reactionTime;
-        const target = reaction.anchor + activeNews.direction * reaction.size * 0.25;
+        const target = reaction.anchor + activeNews.direction * reaction.size * (1 - reaction.mediumPullbackFraction);
         if (elapsed <= reaction.recoverySeconds) {
             const ticksLeft = Math.max(1, Math.ceil((reaction.recoverySeconds - elapsed) / 0.25) + 1);
             const noise = ticksLeft <= 1 ? 0 : randomBetween(-1, 1) * reaction.size * 0.045 * Math.sqrt((ticksLeft - 1) / ticksLeft);
