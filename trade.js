@@ -438,3 +438,4 @@ window.closeAllTrades = closeAllTrades;
 
 // Initial sync
 balanceDisplay.textContent = balance.toFixed(2);
+
