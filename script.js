@@ -319,6 +319,25 @@ function initChart(priceMin = 9, priceMax = 10) {
       candle.low = Math.min(candle.low, price);
     }
     candle.close = price;
+    // Give synthetic history readable, asymmetric wicks without oversized tails.
+    // This only shapes preloaded OHLC; live candles still use actual tick extremes.
+    const body = Math.abs(candle.close - candle.open);
+    const bodyHigh = Math.max(candle.open, candle.close);
+    const bodyLow = Math.min(candle.open, candle.close);
+    const wickLimit = candle.open * 0.012;
+    const historyWick = () => Math.min(wickLimit,
+      body * (0.25 + Math.random() * 0.35) + candle.open * (0.0015 + Math.random() * 0.0015));
+    candle.high = bodyHigh + Math.min(wickLimit, Math.max(candle.high - bodyHigh, historyWick()));
+    candle.low = Math.max(0.00001, bodyLow - Math.min(wickLimit, Math.max(bodyLow - candle.low, historyWick())));
+    // Occasional one-sided rejection candles: extend only the wick OR tail.
+    if (Math.random() < 0.25) {
+      const extension = 2 + Math.random();
+      if (Math.random() < 0.5) {
+        candle.high = bodyHigh + (candle.high - bodyHigh) * extension;
+      } else {
+        candle.low = Math.max(0.00001, bodyLow - (bodyLow - candle.low) * extension);
+      }
+    }
     data.push(candle);
   }
   // Keep the live starting price inside the selected volatility range.
