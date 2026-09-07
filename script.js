@@ -33,6 +33,112 @@ let candleMove = null;
 let candleExcursion = 0;
 const TICK_PATH_CONFIG = { excursionStrength: 1.0, movementMultiplier: 1.8 };
 
+// Synthetic price structure, not real order flow. Cooldowns count quiet candles.
+const STRUCTURE_CONFIG = { minCooldown: 20, maxCooldown: 40, lookback: 12,
+    minPhaseTicks: 120, extraPhaseTicks: 120, driftFraction: 0.009, noiseFraction: 0.10 };
+let quietSetup = null;
+let quietPath = null;
+let quietCooldown = STRUCTURE_CONFIG.minCooldown;
+
+function resetQuietMarket() {
+    quietSetup = null;
+    quietPath = null;
+    quietCooldown = STRUCTURE_CONFIG.minCooldown;
+}
+
+function buildQuietPath(defaultClose) {
+    const open = currentTickPrice;
+    if (!quietSetup && quietCooldown > 0) quietCooldown--;
+    else if (!quietSetup && !currentPattern && !currentTrend && !patternQueue.length) {
+        const history = data.filter(c => c !== currentCandle).slice(-STRUCTURE_CONFIG.lookback);
+        if (history.length === STRUCTURE_CONFIG.lookback) {
+            const low = Math.min(...history.map(c => c.low));
+            const high = Math.max(...history.map(c => c.high));
+            // Sweep only a nearby existing level; never teleport to a distant swing.
+            const directions = [];
+            if (Math.abs(open - low) < open * 0.06) directions.push(1);
+            if (Math.abs(open - high) < open * 0.06) directions.push(-1);
+            if (directions.length) {
+                const direction = directions[Math.floor(Math.random() * directions.length)];
+                startQuietSetup(direction, direction > 0 ? low : high,
+                    open * (0.012 + Math.random() * 0.008));
+            }
+        }
+    }
+
+    if (quietSetup) {
+        quietPath = null;
+        return; // Setups have their own continuous path across candle boundaries.
+    }
+    const close = Math.max(open * 0.8, defaultClose);
+    const body = Math.abs(close - open);
+    const wick = open * (0.003 + Math.random() * 0.007) + body * (0.15 + Math.random() * 0.35);
+    let high = Math.max(open, close) + wick * (0.6 + Math.random());
+    let low = Math.max(open * 0.5, Math.min(open, close) - wick * (0.6 + Math.random()));
+    // Visit both extremes through actual ticks, with randomized turning times.
+    const lowFirst = Math.random() < 0.5;
+    quietPath = { points: [open, lowFirst ? low : high, lowFirst ? high : low, close],
+        ticks: [0, 12 + Math.floor(Math.random() * 9), 36 + Math.floor(Math.random() * 9), 60] };
+}
+
+function startQuietSetup(direction, level, unit) {
+    quietSetup = { direction, level, unit, phase: 0, age: 0, zone: null };
+    setQuietPhase(level - direction * unit * 0.45);
+}
+
+function setQuietPhase(target) {
+    const s = quietSetup;
+    s.target = Math.max(0.00001, target);
+    s.travelDirection = Math.sign(s.target - currentTickPrice) || s.direction;
+    s.age = 0;
+    s.minTicks = STRUCTURE_CONFIG.minPhaseTicks + Math.floor(Math.random() * STRUCTURE_CONFIG.extraPhaseTicks);
+    s.swingTicks = 0;
+}
+
+function structureTickMove() {
+    const s = quietSetup, u = s.unit, d = s.direction;
+    // A zone must actually be reached. No deadline or candle-close snap to target.
+    if (s.age >= s.minTicks && (currentTickPrice - s.target) * s.travelDirection >= 0) {
+        s.phase++;
+        if (s.phase === 1) setQuietPhase(s.level + d * u * 0.5);
+        else if (s.phase === 2) {
+            const preceding = data.filter(c => c !== currentCandle).at(-1);
+            s.zone = (preceding.open + preceding.close) / 2;
+            setQuietPhase(s.zone + d * u * 2.5);
+        } else if (s.phase === 3) setQuietPhase(s.zone);
+        else if (s.phase === 4) setQuietPhase(s.zone + d * u * 3.5);
+        else {
+            quietSetup = null;
+            quietCooldown = STRUCTURE_CONFIG.minCooldown + Math.floor(Math.random() *
+                (STRUCTURE_CONFIG.maxCooldown - STRUCTURE_CONFIG.minCooldown + 1));
+            return 0;
+        }
+    }
+    s.age++;
+    // Short random waves sometimes oppose the destination, producing pullbacks
+    // across ticks AND candles. Their duration is independent of candle boundaries.
+    if (s.swingTicks-- <= 0) {
+        s.swingTicks = 20 + Math.floor(Math.random() * 100);
+        s.swing = (Math.random() - 0.5) * u * 0.035;
+    }
+    const driftLimit = u * STRUCTURE_CONFIG.driftFraction;
+    const drift = Math.max(-driftLimit, Math.min(driftLimit, (s.target - currentTickPrice) * 0.015));
+    return drift + s.swing + (Math.random() - 0.5) * 2 * u * STRUCTURE_CONFIG.noiseFraction;
+}
+
+function quietTickMove() {
+    if (quietSetup) return structureTickMove();
+    // News may expire mid-candle; keep ticking until a fresh full-bar path starts.
+    if (!quietPath) return (Math.random() - 0.5) * currentTickPrice * 0.004;
+    const tick = candleTickCount + 1;
+    const segment = quietPath.ticks.findIndex(t => t >= tick);
+    const remaining = quietPath.ticks[segment] - tick + 1;
+    const target = quietPath.points[segment];
+    const noiseScale = Math.max(quietPath.points[0] * 0.004, Math.abs(target - currentTickPrice) / remaining * 4);
+    const noise = remaining === 1 ? 0 : (Math.random() - 0.5) * noiseScale;
+    return (target - currentTickPrice) / remaining + noise;
+}
+
 const volatilitySelect = document.getElementById('volatilitySelect');
 const priceDisplay = document.getElementById('priceDisplay');
 
@@ -372,8 +478,21 @@ function generateMarketTick() {
     // 250ms = 0.25 second.
     marketSeconds += TICK_INTERVAL_MS / 1000;
 
-    // Generate an intended movement from the existing market engine.
-    let move = generateTickMove();
+    // Resolve releases first so quiet setups cannot act on a news-release tick.
+    updateNews(marketSeconds);
+    const newsDriven = Boolean(activeNews || newsContinuation);
+    if (newsDriven) {
+        resetQuietMarket();
+        candleMove = null;
+    }
+    let move = 0;
+    if (!newsDriven) {
+        if (candleTickCount === 0) {
+            move = generateTickMove();
+            buildQuietPath(currentTickPrice + move * TICKS_PER_CANDLE);
+        }
+        move = quietTickMove();
+    }
 
 
     const noiseBase =
@@ -392,7 +511,7 @@ function generateMarketTick() {
 
     const nextPrice =
         (currentTickPrice || data[data.length - 1].close) +
-        applyNewsToPriceMove(move + tickNoise, marketSeconds, currentTickPrice);
+        applyNewsToPriceMove(newsDriven ? tickNoise : move, marketSeconds, currentTickPrice);
 
     updateCurrentCandle(nextPrice);
 
@@ -415,6 +534,7 @@ function generateMarketTick() {
         currentCandle = null;
         candleMove = null;
         candleExcursion = 0;
+        quietPath = null;
     }
     if (!batchingTicks) updateMarketControls();
 }
@@ -552,6 +672,10 @@ function applyManualMove(direction) {
   const targetPrice = Math.max(0.00001, previousPrice + direction * Math.abs(value));
   if (!Number.isFinite(targetPrice)) return notifyTrading('Enter a valid number for the manual price move.');
   updateCurrentCandle(targetPrice);
+  // Keep the remaining intrabar path relative to the manually shifted price.
+  if (quietPath) quietPath.points = quietPath.points.map(p => Math.max(0.00001, p + targetPrice - previousPrice));
+  quietSetup = null;
+  quietCooldown = STRUCTURE_CONFIG.minCooldown;
   triggerRetracement(previousPrice, targetPrice);
 }
 
@@ -704,6 +828,7 @@ function applyVolatility(level) {
     marketSeconds = 0;
     if (marketInterval) lastTickWallTime = Date.now();
     resetNews(marketSeconds);
+    resetQuietMarket();
     candleMove = null;
     candleExcursion = 0;
     smoothedVol = null;
