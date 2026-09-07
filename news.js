@@ -21,6 +21,7 @@ const NEWS_CONFIG = {
         enabled: true,
         firstDelaySeconds: 60,
         gapAfterEndSeconds: 15 * 60,
+        durationSeconds: 120, // All fixed-news reaction types.
 
         // Events rotate in this order after each release ends.
         events: [
@@ -29,7 +30,6 @@ const NEWS_CONFIG = {
                 name: "US Non-Farm Payrolls (NFP)",
                 category: "employment",
                 impact: 4.0,
-                durationSeconds: 30,
                 surpriseRange: 0.35
             },
             {
@@ -37,7 +37,6 @@ const NEWS_CONFIG = {
                 name: "US Consumer Price Index (CPI)",
                 category: "inflation",
                 impact: 3.5,
-                durationSeconds: 30,
                 surpriseRange: 0.30
             },
             {
@@ -45,7 +44,6 @@ const NEWS_CONFIG = {
                 name: "US GDP",
                 category: "growth",
                 impact: 2.5,
-                durationSeconds: 25,
                 surpriseRange: 0.25
             },
             {
@@ -53,7 +51,6 @@ const NEWS_CONFIG = {
                 name: "FOMC Interest Rate Decision",
                 category: "rates",
                 impact: 5.0,
-                durationSeconds: 45,
                 surpriseRange: 0.50
             }
         ]
@@ -129,12 +126,12 @@ const NEWS_CONFIG = {
     // Release shock, partial recovery, then noisy price discovery.
     // Fractions are relative to the release price or initial shock.
     reaction: {
-        continuationChance: 0.5,
+        continuationChance: 0.6, // High/Extreme follow-through probability.
+        extremeSecondSpikeDelaySeconds: 4, // Measured from the first spike.
+        extremeSecondSpikeFraction: 0.5, // Half the first spike's absolute price change.
         continuationSeconds: 120,
-        fixedHighSeconds: 90,
-        fixedExtremeSeconds: 120,
         // Each event can override these weights using its own impactChances.
-        impactChances: {medium: 0.45, high: 0.35, extreme: 0.20},
+        impactChances: {medium: 0.50, high: 0.30, extreme: 0.20},
         delaySeconds: 2, // News is visible immediately; price shock waits two seconds.
         shockPriceFraction: 0.20, // 20% at impact 4, before variation and limits
         minShockPriceFraction: 0.15,
@@ -223,14 +220,12 @@ function startNews(event, type, nowSeconds) {
                 event.minDurationSeconds,
                 event.maxDurationSeconds
               )
-            : event.durationSeconds;
+            : NEWS_CONFIG.fixed.durationSeconds;
 
     const weights = event.impactChances || NEWS_CONFIG.reaction.impactChances;
     const roll = Math.random() * (weights.medium + weights.high + weights.extreme);
     const emotionalImpact = roll < weights.medium ? 'medium'
         : roll < weights.medium + weights.high ? 'high' : 'extreme';
-    if (type === 'fixed' && emotionalImpact === 'high') durationSeconds = NEWS_CONFIG.reaction.fixedHighSeconds;
-    if (type === 'fixed' && emotionalImpact === 'extreme') durationSeconds = NEWS_CONFIG.reaction.fixedExtremeSeconds;
     // A fresh release takes priority over any older follow-through.
     newsContinuation = null;
 
@@ -252,26 +247,29 @@ function startNews(event, type, nowSeconds) {
     newsHistory = newsHistory.slice(0, 6);
 }
 
+// Start follow-through only after the actual spike candle has closed.
+function onNewsCandleClosed(candle, nowSeconds) {
+    const ended = activeNews;
+    if (!ended || !ended.reaction || ended.emotionalImpact === 'medium') return;
+    const reaction = ended.reaction;
+    if (reaction.continuationDecided || !reaction.spikeTimes.includes(candle.time)) return;
+    if (ended.emotionalImpact === 'extreme' && !reaction.secondShockDone) return;
+    reaction.continuationDecided = true;
+    if (Math.random() >= NEWS_CONFIG.reaction.continuationChance) return;
+    const candles = data.filter(c => reaction.spikeTimes.includes(c.time));
+    const reference = ended.direction > 0 ? Math.max(...candles.map(c => c.high)) : Math.min(...candles.map(c => c.low));
+    const startPrice = currentTickPrice;
+    const margin = Math.max(Math.abs(reference) * 0.025, reaction.size * 0.1);
+    const target = ended.direction > 0 ? Math.max(reference,startPrice)+margin : Math.max(0.00001,Math.min(reference,startPrice)-margin);
+    // Finish before the active countdown ends, rather than starting at expiration.
+    const ticks = Math.floor(Math.min(NEWS_CONFIG.reaction.continuationSeconds, ended.endTime-nowSeconds-0.25)/0.25);
+    if (ticks < 1) return;
+    newsContinuation = {direction:ended.direction,reference,target,startPrice,startTime:nowSeconds,remainingTicks:ticks,totalTicks:ticks,excursion:0};
+}
+
 function updateNews(nowSeconds) {
 
     if (activeNews && nowSeconds >= activeNews.endTime) {
-        const ended = activeNews;
-        if (ended.reaction && ended.emotionalImpact !== 'medium' && Math.random() < NEWS_CONFIG.reaction.continuationChance) {
-            const candles = data.filter(c => ended.reaction.spikeTimes.includes(c.time));
-            const reference = ended.direction > 0
-                ? Math.max(...candles.map(c => c.high), ended.reaction.anchor + ended.reaction.size)
-                : Math.min(...candles.map(c => c.low), ended.reaction.anchor - ended.reaction.size);
-            const startPrice = currentTickPrice;
-            // Finish beyond both the spike extreme and the current price.
-            const margin = Math.max(Math.abs(reference) * 0.025, ended.reaction.size * 0.1);
-            const target = ended.direction > 0
-                ? Math.max(reference, startPrice) + margin
-                : Math.max(0.00001, Math.min(reference, startPrice) - margin);
-            newsContinuation = {direction: ended.direction, reference, target, startTime: ended.endTime,
-                startPrice, remainingTicks: Math.round(NEWS_CONFIG.reaction.continuationSeconds / 0.25),
-                totalTicks: Math.round(NEWS_CONFIG.reaction.continuationSeconds / 0.25),
-                excursion: 0};
-        }
         if (activeNews.type === 'fixed' && NEWS_CONFIG.fixed.events.length) {
             const next = NEWS_CONFIG.fixed.events[fixedRotationIndex];
             nextFixedNewsTimes = {[next.id]: activeNews.endTime + NEWS_CONFIG.fixed.gapAfterEndSeconds};
@@ -378,7 +376,7 @@ function applyNewsToPriceMove(baseMove, nowSeconds, price) {
 
     updateNews(nowSeconds);
 
-    if (!activeNews) {
+    {
         if (newsContinuation) {
             const follow = newsContinuation;
             if (nowSeconds <= follow.startTime) return baseMove * NEWS_CONFIG.volatility.normalMultiplier;
@@ -393,7 +391,7 @@ function applyNewsToPriceMove(baseMove, nowSeconds, price) {
             if (!follow.remainingTicks) newsContinuation = null;
             return move;
         }
-        return baseMove * NEWS_CONFIG.volatility.normalMultiplier;
+        if (!activeNews) return baseMove * NEWS_CONFIG.volatility.normalMultiplier;
     }
 
     const cfg = NEWS_CONFIG.reaction;
@@ -414,11 +412,11 @@ function applyNewsToPriceMove(baseMove, nowSeconds, price) {
     }
 
     const reaction = activeNews.reaction;
-    if (activeNews.emotionalImpact === 'extreme' && !reaction.secondShockDone && nowSeconds >= reactionTime + 2) {
+    if (activeNews.emotionalImpact === 'extreme' && !reaction.secondShockDone && nowSeconds >= reactionTime + cfg.extremeSecondSpikeDelaySeconds) {
         reaction.secondShockDone = true;
         reaction.spikeTimes.push(currentCandle ? currentCandle.time : time + CANDLE_INTERVAL_MS / 1000);
-        const secondSize = price * reaction.fraction;
-        // Same percentage and direction as the first impulse, at the new price.
+        const secondSize = reaction.anchor * reaction.fraction * cfg.extremeSecondSpikeFraction;
+        // Same direction, with half the original impulse's price change.
         reaction.size = Math.abs(price + activeNews.direction * secondSize - reaction.anchor);
         return activeNews.direction * secondSize;
     }
@@ -462,4 +460,6 @@ function getActiveNews() {
 window.getActiveNews = getActiveNews;
 window.updateNews = updateNews;
 window.NEWS_CONFIG = NEWS_CONFIG;
+
+
 
