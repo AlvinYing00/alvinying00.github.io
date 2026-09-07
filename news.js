@@ -129,6 +129,10 @@ const NEWS_CONFIG = {
     // Release shock, partial recovery, then noisy price discovery.
     // Fractions are relative to the release price or initial shock.
     reaction: {
+        continuationChance: 0.5,
+        continuationSeconds: 120,
+        fixedHighSeconds: 90,
+        fixedExtremeSeconds: 120,
         // Each event can override these weights using its own impactChances.
         impactChances: {medium: 0.45, high: 0.35, extreme: 0.20},
         delaySeconds: 2, // News is visible immediately; price shock waits two seconds.
@@ -152,6 +156,7 @@ const NEWS_CONFIG = {
 // ============================================================
 
 let activeNews = null;
+let newsContinuation = null;
 let nextHotNewsTime = 0;
 let nextFixedNewsTimes = {};
 let fixedRotationIndex = 0;
@@ -160,6 +165,7 @@ let newsHistory = [];
 
 function resetNews(nowSeconds) {
     activeNews = null;
+    newsContinuation = null;
     newsHistory = [];
     scheduleInitialNews(nowSeconds);
     renderNews(nowSeconds);
@@ -211,7 +217,7 @@ function startNews(event, type, nowSeconds) {
         direction = direction === "up" ? 1 : -1;
     }
 
-    const durationSeconds =
+    let durationSeconds =
         type === "hot"
             ? randomBetween(
                 event.minDurationSeconds,
@@ -223,6 +229,10 @@ function startNews(event, type, nowSeconds) {
     const roll = Math.random() * (weights.medium + weights.high + weights.extreme);
     const emotionalImpact = roll < weights.medium ? 'medium'
         : roll < weights.medium + weights.high ? 'high' : 'extreme';
+    if (type === 'fixed' && emotionalImpact === 'high') durationSeconds = NEWS_CONFIG.reaction.fixedHighSeconds;
+    if (type === 'fixed' && emotionalImpact === 'extreme') durationSeconds = NEWS_CONFIG.reaction.fixedExtremeSeconds;
+    // A fresh release takes priority over any older follow-through.
+    newsContinuation = null;
 
     activeNews = {
         id: event.id,
@@ -245,6 +255,23 @@ function startNews(event, type, nowSeconds) {
 function updateNews(nowSeconds) {
 
     if (activeNews && nowSeconds >= activeNews.endTime) {
+        const ended = activeNews;
+        if (ended.reaction && ended.emotionalImpact !== 'medium' && Math.random() < NEWS_CONFIG.reaction.continuationChance) {
+            const candles = data.filter(c => ended.reaction.spikeTimes.includes(c.time));
+            const reference = ended.direction > 0
+                ? Math.max(...candles.map(c => c.high), ended.reaction.anchor + ended.reaction.size)
+                : Math.min(...candles.map(c => c.low), ended.reaction.anchor - ended.reaction.size);
+            const startPrice = currentTickPrice;
+            // Finish beyond both the spike extreme and the current price.
+            const margin = Math.max(Math.abs(reference) * 0.025, ended.reaction.size * 0.1);
+            const target = ended.direction > 0
+                ? Math.max(reference, startPrice) + margin
+                : Math.max(0.00001, Math.min(reference, startPrice) - margin);
+            newsContinuation = {direction: ended.direction, reference, target, startTime: ended.endTime,
+                startPrice, remainingTicks: Math.round(NEWS_CONFIG.reaction.continuationSeconds / 0.25),
+                totalTicks: Math.round(NEWS_CONFIG.reaction.continuationSeconds / 0.25),
+                excursion: 0};
+        }
         if (activeNews.type === 'fixed' && NEWS_CONFIG.fixed.events.length) {
             const next = NEWS_CONFIG.fixed.events[fixedRotationIndex];
             nextFixedNewsTimes = {[next.id]: activeNews.endTime + NEWS_CONFIG.fixed.gapAfterEndSeconds};
@@ -352,6 +379,20 @@ function applyNewsToPriceMove(baseMove, nowSeconds, price) {
     updateNews(nowSeconds);
 
     if (!activeNews) {
+        if (newsContinuation) {
+            const follow = newsContinuation;
+            if (nowSeconds <= follow.startTime) return baseMove * NEWS_CONFIG.volatility.normalMultiplier;
+            const remaining = follow.remainingTicks;
+            // Noisy bridge: alternating excursions, with an exact final breakout.
+            const amplitude = Math.max(Math.abs(follow.target - follow.startPrice), follow.startPrice * 0.04);
+            const nextExcursion = remaining <= 1 ? 0 : follow.excursion * (remaining - 1) / remaining +
+                randomBetween(-1, 1) * amplitude * 0.055 * Math.sqrt((remaining - 1) / remaining);
+            const move = (follow.target - price + follow.excursion) / remaining + nextExcursion - follow.excursion;
+            follow.excursion = nextExcursion;
+            follow.remainingTicks--;
+            if (!follow.remainingTicks) newsContinuation = null;
+            return move;
+        }
         return baseMove * NEWS_CONFIG.volatility.normalMultiplier;
     }
 
@@ -366,7 +407,8 @@ function applyNewsToPriceMove(baseMove, nowSeconds, price) {
             randomBetween(cfg.shockVariationMin, cfg.shockVariationMax)));
         activeNews.reaction = { anchor: price, size: price * fraction, fraction,
             secondShockDone: false,
-            recoverySeconds: Math.max(0.25, Math.min(3, (TICKS_PER_CANDLE - candleTickCount - 1) * 0.25)) };
+            spikeTimes: [currentCandle ? currentCandle.time : time + CANDLE_INTERVAL_MS / 1000],
+            recoverySeconds: Math.max(0.25, (TICKS_PER_CANDLE - candleTickCount - 1) * 0.25) };
         // One delayed shock tick; candle creation/closure stays with the tick engine.
         return activeNews.direction * activeNews.reaction.size;
     }
@@ -374,6 +416,7 @@ function applyNewsToPriceMove(baseMove, nowSeconds, price) {
     const reaction = activeNews.reaction;
     if (activeNews.emotionalImpact === 'extreme' && !reaction.secondShockDone && nowSeconds >= reactionTime + 2) {
         reaction.secondShockDone = true;
+        reaction.spikeTimes.push(currentCandle ? currentCandle.time : time + CANDLE_INTERVAL_MS / 1000);
         const secondSize = price * reaction.fraction;
         // Same percentage and direction as the first impulse, at the new price.
         reaction.size = Math.abs(price + activeNews.direction * secondSize - reaction.anchor);
@@ -385,7 +428,8 @@ function applyNewsToPriceMove(baseMove, nowSeconds, price) {
         const target = reaction.anchor + activeNews.direction * reaction.size * 0.25;
         if (elapsed <= reaction.recoverySeconds) {
             const ticksLeft = Math.max(1, Math.ceil((reaction.recoverySeconds - elapsed) / 0.25) + 1);
-            return (target - price) / ticksLeft;
+            const noise = ticksLeft <= 1 ? 0 : randomBetween(-1, 1) * reaction.size * 0.045 * Math.sqrt((ticksLeft - 1) / ticksLeft);
+            return (target - price) / ticksLeft + noise;
         }
         return (target - price) * 0.12 + randomBetween(-1, 1) * reaction.size * 0.025;
     }
