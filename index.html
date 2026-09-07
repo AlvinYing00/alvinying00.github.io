@@ -1,6 +1,14 @@
 <!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="dark"><title>FRX · Trading Terminal</title><link rel="stylesheet" href="style.css"></head>
-<body><div id="tradingNotice" class="tradingNotice" role="alert" hidden><span id="tradingNoticeText"></span><button type="button" onclick="document.getElementById('tradingNotice').hidden=true" aria-label="Dismiss notification">×</button></div>
+<body><div id="tradingNotice" class="tradingNotice" role="alert" hidden><span id="tradingNoticeText"></span><button type="button" onclick="dismissTradingNotice()" aria-label="Dismiss notification">×</button></div>
+<section id="exitPricePanel" class="exitPricePanel panel" role="dialog" aria-labelledby="exitPriceTitle" hidden>
+<form onsubmit="event.preventDefault();saveExitPrice()" onkeydown="if(event.key==='Escape'){event.preventDefault();closeExitPriceEditor()}">
+<h2 id="exitPriceTitle">Set exit price</h2>
+<p class="small muted">Market prices continue updating while you edit.</p>
+<label class="fieldLabel" for="exitPriceInput">Price</label>
+<input id="exitPriceInput" type="number" step="any" inputmode="decimal" autocomplete="off">
+<div class="twoColumns"><button type="button" onclick="closeExitPriceEditor()">Cancel</button><button type="submit">Save</button></div>
+</form></section>
 <header class="appHeader"><a class="brand" href="#main"><b>F</b> FRX <small>TERMINAL</small></a><span class="tag">SIMULATED MARKET</span><span class="headerNote">A space to practice your edge.</span></header>
 <main id="main"><div class="pageHeading"><div><span class="eyebrow">YOUR TRADING WORKSPACE</span><h1>Market overview</h1></div><span id="marketStatus" class="statusBadge">● Paused</span></div>
 <div class="workspace">
