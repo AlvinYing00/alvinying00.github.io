@@ -133,6 +133,9 @@ const NEWS_CONFIG = {
         // Each event can override these weights using its own impactChances.
         impactChances: {medium: 0.50, high: 0.30, extreme: 0.20},
         delaySeconds: 2, // News is visible immediately; price shock waits two seconds.
+        panicMinTickFraction: 0.012, // Pre-spike moves: 1.2–3.5% of release price per tick.
+        panicMaxTickFraction: 0.035,
+        panicMaxDeviationFraction: 0.08, // Keep the two-second scramble near the release price.
         shockPriceFraction: 0.20, // 20% at impact 4, before variation and limits
         minShockPriceFraction: 0.15,
         maxShockPriceFraction: 0.25,
@@ -240,7 +243,8 @@ function startNews(event, type, nowSeconds) {
         startTime: nowSeconds,
         endTime: nowSeconds + durationSeconds,
         durationSeconds,
-        reaction: null
+        reaction: null,
+        panic: null
     };
 
     newsHistory.unshift({name: event.name, type, startTime: nowSeconds});
@@ -397,7 +401,16 @@ function applyNewsToPriceMove(baseMove, nowSeconds, price) {
     const cfg = NEWS_CONFIG.reaction;
     const reactionTime = activeNews.startTime + cfg.delaySeconds;
     if (nowSeconds < reactionTime) {
-        return baseMove * NEWS_CONFIG.volatility.normalMultiplier;
+        if (!activeNews.panic) activeNews.panic = {anchor: price, sign: 0, run: 0};
+        const panic = activeNews.panic;
+        // Direction-independent bursts; no more than two ticks in one direction.
+        let sign = panic.run >= 2 ? -panic.sign : randomSign();
+        const magnitude = panic.anchor * randomBetween(cfg.panicMinTickFraction, cfg.panicMaxTickFraction);
+        const limit = panic.anchor * cfg.panicMaxDeviationFraction;
+        if (Math.abs(price + sign * magnitude - panic.anchor) > limit) sign = -sign;
+        panic.run = sign === panic.sign ? panic.run + 1 : 1;
+        panic.sign = sign;
+        return sign * magnitude;
     }
     if (!activeNews.reaction) {
         const fraction = Math.max(cfg.minShockPriceFraction, Math.min(cfg.maxShockPriceFraction,
