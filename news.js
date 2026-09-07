@@ -63,9 +63,9 @@ const NEWS_CONFIG = {
         enabled: true,
 
         // Random hot-news rotation.
-        // Once every 20–35 minutes of running market time.
-        minRotationSeconds: 20 * 60,
-        maxRotationSeconds: 35 * 60,
+        // Once every 25–85 minutes of running market time.
+        minRotationSeconds: 25 * 60,
+        maxRotationSeconds: 85 * 60,
 
         events: [
             {
