@@ -70,9 +70,9 @@ function buildQuietPath(defaultClose) {
         quietPath = null;
         return; // Setups have their own continuous path across candle boundaries.
     }
-    const close = Math.max(open * 0.8, defaultClose);
+    const close = Math.max(open * 0.975, Math.min(open * 1.025, defaultClose));
     const body = Math.abs(close - open);
-    const wick = open * (0.003 + Math.random() * 0.007) + body * (0.15 + Math.random() * 0.35);
+    const wick = open * (0.006 + Math.random() * 0.006) + body * (0.15 + Math.random() * 0.35);
     let high = Math.max(open, close) + wick * (0.6 + Math.random());
     let low = Math.max(open * 0.5, Math.min(open, close) - wick * (0.6 + Math.random()));
     // Visit both extremes through actual ticks, with randomized turning times.
@@ -123,20 +123,22 @@ function structureTickMove() {
     }
     const driftLimit = u * STRUCTURE_CONFIG.driftFraction;
     const drift = Math.max(-driftLimit, Math.min(driftLimit, (s.target - currentTickPrice) * 0.015));
-    return drift + s.swing + (Math.random() - 0.5) * 2 * u * STRUCTURE_CONFIG.noiseFraction;
+    const move = drift + s.swing + (Math.random() - 0.5) * 2 * Math.max(u * STRUCTURE_CONFIG.noiseFraction, currentTickPrice*0.0035);
+    return Math.max(-currentTickPrice*0.008,Math.min(currentTickPrice*0.008,move));
 }
 
 function quietTickMove() {
     if (quietSetup) return structureTickMove();
     // News may expire mid-candle; keep ticking until a fresh full-bar path starts.
-    if (!quietPath) return (Math.random() - 0.5) * currentTickPrice * 0.004;
+    if (!quietPath) return (Math.random() - 0.5) * currentTickPrice * 0.008;
     const tick = candleTickCount + 1;
     const segment = quietPath.ticks.findIndex(t => t >= tick);
     const remaining = quietPath.ticks[segment] - tick + 1;
     const target = quietPath.points[segment];
-    const noiseScale = Math.max(quietPath.points[0] * 0.004, Math.abs(target - currentTickPrice) / remaining * 4);
+    const noiseScale = Math.max(quietPath.points[0] * 0.008, Math.abs(target - currentTickPrice) / remaining * 4);
     const noise = remaining === 1 ? 0 : (Math.random() - 0.5) * noiseScale;
-    return (target - currentTickPrice) / remaining + noise;
+    const move = (target - currentTickPrice) / remaining + noise;
+    return Math.max(-currentTickPrice*0.008, Math.min(currentTickPrice*0.008,move));
 }
 
 const volatilitySelect = document.getElementById('volatilitySelect');
@@ -904,4 +906,3 @@ window.getCurrentTickPrice = function () {
 
 // ---- START ----
 applyVolatility(currentVolatility);
-
