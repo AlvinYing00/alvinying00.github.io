@@ -331,6 +331,14 @@ function newsNoiseAmplitude(reaction) {
         (reaction.strengthMode ? NEWS_CONFIG.reaction.extremeStrengthMultiplier : 1);
 }
 
+function momentumExcursion(previous, remaining, amplitude, guideMove, price) {
+    if (remaining<=1) return 0;
+    // Persistent intrabar noise crosses candle boundaries. Only the event leg's
+    // final few ticks settle toward its outcome; a candle close never resets it.
+    const settling=Math.min(1,(remaining-1)/16);
+    return (previous*0.9+randomBetween(-1,1)*amplitude*0.65)*settling;
+}
+
 function anticipationMove(nowSeconds, price) {
     const cfg = NEWS_CONFIG.reaction;
     // Unexpected hot news must never signal its arrival through anticipation.
@@ -351,10 +359,20 @@ function anticipationMove(nowSeconds, price) {
 
 function continuationGuide(leg, startPrice, tick) {
     if (!leg.path) {
-        // Uneven pushes and smaller counter-moves; targets remain event-local.
-        const count=Math.max(1,Math.floor(leg.ticks/60));
-        const weights=Array.from({length:count},(_,i)=>
-            count>=3 && i%3===1 ? -randomBetween(0.4,0.8) : randomBetween(0.75,1.8));
+        // Irregular 2–20 second waves, unrelated to 15-second candle boundaries.
+        leg.turns=[0];
+        while(leg.ticks-leg.turns.at(-1)>85) {
+            leg.turns.push(leg.turns.at(-1)+Math.floor(randomBetween(9,80)));
+        }
+        leg.turns.push(leg.ticks);
+        const count=leg.turns.length-1;
+        const weights=Array.from({length:count},()=>
+            randomBetween(0.25,1.8)*(Math.random()<0.3?-1:1));
+        // Bound normalization so random opposing waves cannot amplify a small
+        // net sum into an oversized move. There is no repeating candle pattern.
+        const minimum=count*0.3;
+        const adjustment=Math.max(0,(minimum-weights.reduce((a,b)=>a+b,0))/count);
+        for(let i=0;i<count;i++)weights[i]+=adjustment;
         const sum=weights.reduce((a,b)=>a+b,0);
         let progress=0;
         leg.path=[startPrice,...weights.map(w=>{
@@ -363,9 +381,10 @@ function continuationGuide(leg, startPrice, tick) {
         })];
         leg.path[leg.path.length-1]=leg.target;
     }
-    const position=Math.min(leg.path.length-1,tick/leg.ticks*(leg.path.length-1));
-    const index=Math.min(leg.path.length-2,Math.floor(position));
-    return leg.path[index]+(leg.path[index+1]-leg.path[index])*(position-index);
+    const index=Math.max(0,Math.min(leg.path.length-2,leg.turns.findIndex(t=>t>=tick)-1));
+    const progress=Math.max(0,Math.min(1,(tick-leg.turns[index])/(leg.turns[index+1]-leg.turns[index])));
+    const eased=progress*progress*(3-2*progress);
+    return leg.path[index]+(leg.path[index+1]-leg.path[index])*eased;
 }
 
 function updateNews(nowSeconds) {
@@ -487,8 +506,8 @@ function applyNewsToPriceMove(baseMove, nowSeconds, price) {
             const guideBefore=continuationGuide(leg,follow.startPrice,elapsed);
             const guideAfter=continuationGuide(leg,follow.startPrice,elapsed+1);
             // Noisy bridge: alternating excursions, with an exact final breakout.
-            const nextExcursion = remaining <= 1 ? 0 : follow.excursion * (remaining - 1) / remaining +
-                randomBetween(-1, 1) * follow.noiseAmplitude * Math.sqrt((remaining - 1) / remaining);
+            const nextExcursion = momentumExcursion(follow.excursion,remaining,
+                follow.noiseAmplitude,guideAfter-guideBefore,price);
             // Correct any manual price offset gradually, never flatten the
             // unequal candle pushes into one constant-speed reversal.
             const move = guideAfter-guideBefore +
@@ -583,9 +602,8 @@ function applyNewsToPriceMove(baseMove, nowSeconds, price) {
         // Keep the post-pullback destination moving through the news period.
         // Unequal pushes/counter-candles share the normal candle clock, with
         // the same tick-noise amplitude used by all other active-news paths.
-        const bridgeTicks=Math.min(remaining,TICKS_PER_CANDLE-candleTickCount);
-        const excursion=bridgeTicks<=1 ? 0 : trend.excursion*(bridgeTicks-1)/bridgeTicks+
-            randomBetween(-1,1)*newsNoiseAmplitude(reaction)*Math.sqrt((bridgeTicks-1)/bridgeTicks);
+        const excursion=momentumExcursion(trend.excursion,remaining,
+            newsNoiseAmplitude(reaction),after-before,price);
         const move=after-before+(before+trend.excursion-price)/remaining+excursion-trend.excursion;
         trend.excursion=excursion;
         trend.remaining--;
