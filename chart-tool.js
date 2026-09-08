@@ -17,6 +17,12 @@
   const hint = document.getElementById('drawingHint');
   const drawings = [];
   let nextId = 1, mode = null, first = null, signature = '';
+  let chartInView = true;
+  if (typeof IntersectionObserver !== 'undefined') {
+    new IntersectionObserver(entries => {
+      chartInView = entries[0].isIntersecting;
+    }).observe(chartElement);
+  }
 
   function setMode(value) {
     mode = value; first = null;
@@ -73,7 +79,7 @@
     return chart.timeScale().logicalToCoordinate((time - data[0].time) / (CANDLE_INTERVAL_MS / 1000));
   }
   function render() {
-    if (!document.hidden && data.length) {
+    if (!document.hidden && chartInView && data.length) {
       const width = chart.timeScale().width();
       const height = chartElement.clientHeight - chart.timeScale().height();
       const entries = positions.filter(p => p.open).map(p => ({id:p.id,type:p.type,label:formatEntryLabel(p),profitClass:p.profit >= 0 ? 'profit' : 'loss',y:candleSeries.priceToCoordinate(p.entry)}));
