@@ -40,6 +40,87 @@ let quietSetup = null;
 let quietPath = null;
 let quietCooldown = STRUCTURE_CONFIG.minCooldown;
 let quietMomentum = null;
+const PRICE_ACTION_CONFIG = { enabled: true };
+let priceActionState = null;
+
+function analyzePriceAction(candles) {
+    const history=candles.slice(-25), last=history.at(-1);
+    if (history.length<8) return {score:0,mode:'range',volatility:1};
+    const prior=history.slice(0,-1), local=prior.slice(-12);
+    // Median range prevents one news spike from dominating quiet-market risk.
+    const ranges=prior.map(c=>(c.high-c.low)/c.close).sort((a,b)=>a-b);
+    const range=Math.max(last.close*.005,Math.min(last.close*.035,last.close*ranges[Math.floor(ranges.length/2)]));
+    const support=Math.min(...local.map(c=>c.low)), resistance=Math.max(...local.map(c=>c.high));
+    const clamp=v=>Math.max(-1,Math.min(1,v));
+    const momentum=clamp((last.close-history.at(-7).close)/(range*3));
+    const pressure=clamp((last.close-last.open)/range);
+    let score=momentum*.65+pressure*.35, mode=Math.abs(momentum)>.35?'trend':'range';
+    const highs=[],lows=[];
+    for(let i=1;i<history.length-1;i++) {
+        if(history[i].high>history[i-1].high && history[i].high>history[i+1].high)highs.push(history[i].high);
+        if(history[i].low<history[i-1].low && history[i].low<history[i+1].low)lows.push(history[i].low);
+    }
+    if(highs.length>=2 && lows.length>=2) {
+        const structure=(Math.sign(highs.at(-1)-highs.at(-2))+Math.sign(lows.at(-1)-lows.at(-2)))/2;
+        score=score*.75+structure*.25;
+    }
+    let breakout=null;
+    if(last.close>resistance+range*.1) {score=.8;mode='breakout';breakout={direction:1,level:resistance};}
+    else if(last.close<support-range*.1) {score=-.8;mode='breakout';breakout={direction:-1,level:support};}
+    else if(last.high>resistance+range*.1 && last.close<resistance && pressure<0) {score=-.65;mode='sweep rejection';}
+    else if(last.low<support-range*.1 && last.close>support && pressure>0) {score=.65;mode='sweep rejection';}
+    else if(momentum*pressure<-.12) {mode='pullback';score=momentum*.4+pressure*.2;}
+    else if(mode==='range')score+=clamp(((support+resistance)/2-last.close)/range)*.25;
+    const trendDirection=Math.sign(momentum)||Math.sign(pressure);
+    let run=0;
+    for(let i=history.length-1;i>=0;i--) {
+        if(Math.sign(history[i].close-history[i].open)!==trendDirection)break;
+        run++;
+    }
+    const mean=history.slice(-8).reduce((sum,c)=>sum+c.close,0)/8;
+    const extension=(last.close-mean)*trendDirection/range;
+    // New highs/lows are evidence of direction, not an unlimited instruction
+    // to accelerate. Extended runs lose pressure and can take a pullback.
+    if(score*trendDirection>0) {
+        score/=1+Math.max(0,run-2)*.35;
+        score-=trendDirection*Math.min(Math.abs(score)*.8,Math.max(0,extension-1.2)*.18);
+    }
+    return {score:clamp(score),mode,breakout,range,support,resistance,run,extension,trendDirection,
+        volatility:Math.max(.85,Math.min(1.25,range/last.close/.015))};
+}
+
+function priceActionTickMove() {
+    if(!priceActionState || candleTickCount===0) {
+        const analysis=analyzePriceAction(data.filter(c=>c!==currentCandle));
+        const previous=priceActionState;
+        let zone=analysis.breakout ? {...analysis.breakout,age:0} : previous?.zone;
+        if(zone) {
+            zone={...zone,age:zone.age+1};
+            if(zone.age>10 || (currentTickPrice-zone.level)*zone.direction < -analysis.range*.7)zone=null;
+            else if(!analysis.breakout && Math.abs(currentTickPrice-zone.level)<analysis.range*.4) {
+                analysis.score=analysis.score*.6+zone.direction*.2;
+                analysis.mode='breakout retest';
+            }
+        }
+        priceActionState={...analysis,zone,waveTicks:previous?.waveTicks??0,
+            wave:previous?.wave??0,drift:previous?.drift??0};
+    }
+    const s=priceActionState;
+    if(s.waveTicks--<=0) {
+        s.waveTicks=18+Math.floor(Math.random()*73);
+        const pullbackChance=.15+Math.min(.5,Math.max(0,s.run-1)*.075+Math.max(0,s.extension-1)*.08);
+        s.wave=Math.random()<pullbackChance ? -s.trendDirection*(.0002+Math.random()*.00025) :
+            (Math.random()-.5)*.0006;
+    }
+    const targetDrift=s.score*.00025+s.wave;
+    s.drift=s.drift*.94+targetDrift*.06;
+    return sampleMarketMove(currentTickPrice,Math.max(-.0006,Math.min(.0006,s.drift)),s.volatility);
+}
+
+function setQuietEngine(value) {
+    PRICE_ACTION_CONFIG.enabled=value==='price-action';
+    resetQuietMarket();currentPattern=null;patternQueue=[];patternCooldown=12;candleMove=null;
+}
 
 // Shared preload/live price process: small multiplicative random ticks with
 // drift, not a route through prescribed candle opens, extremes and closes.
@@ -48,6 +129,7 @@ function sampleMarketMove(price, drift, volatility = 1) {
 }
 
 function resetQuietMarket() {
+    priceActionState = null;
     quietMomentum = null;
     quietSetup = null;
     quietPath = null;
@@ -502,7 +584,9 @@ function generateMarketTick() {
     // Resolve releases first so quiet setups cannot act on a news-release tick.
     updateNews(marketSeconds);
     const newsDriven = Boolean(activeNews || newsContinuation);
-    if (newsDriven) {
+    const anticipationPeriod=NEWS_CONFIG.fixed.enabled && Object.values(nextFixedNewsTimes)
+        .some(t=>t>marketSeconds && t-marketSeconds<=NEWS_CONFIG.reaction.anticipationSeconds);
+    if (newsDriven || anticipationPeriod) {
         resetQuietMarket();
         currentPattern = null;
         patternQueue = [];
@@ -510,7 +594,9 @@ function generateMarketTick() {
         candleMove = null;
     }
     let move = 0;
-    if (!newsDriven) {
+    if (!newsDriven && !anticipationPeriod && PRICE_ACTION_CONFIG.enabled) {
+        move=priceActionTickMove();
+    } else if (!newsDriven && !anticipationPeriod) {
         if (candleTickCount === 0) {
             move = generateTickMove();
             buildQuietPath(currentTickPrice + move * TICKS_PER_CANDLE);
@@ -696,6 +782,7 @@ function applyManualMove(direction) {
   const targetPrice = Math.max(0.00001, previousPrice + direction * Math.abs(value));
   if (!Number.isFinite(targetPrice)) return notifyTrading('Enter a valid number for the manual price move.');
   updateCurrentCandle(targetPrice);
+  priceActionState=null;
   // Keep the remaining intrabar path relative to the manually shifted price.
   if (quietPath && quietPath.target !== null) quietPath.target = Math.max(0.00001,quietPath.target+targetPrice-previousPrice);
   quietSetup = null;
