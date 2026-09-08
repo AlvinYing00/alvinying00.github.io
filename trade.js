@@ -389,6 +389,16 @@ function updateFloatingPL(enforceMargin = true) {
 }
 
 // ---- Render Dashboard ----
+// Preserve live text nodes and avoid DOM mutations when a displayed value is unchanged.
+function updateLiveText(element, value) {
+    if (!element || element.textContent === value) return;
+    if (element.childNodes?.length === 1 && element.firstChild.nodeType === 3) {
+        element.firstChild.nodeValue = value;
+    } else {
+        element.textContent = value;
+    }
+}
+
 function renderTables() {
     if (!data || data.length < 1) return;
 
@@ -400,12 +410,12 @@ function renderTables() {
         .reduce((sum, p) => sum + p.profit, 0);
 
     const effectiveBalance = balance + floatingPL;
-    balanceDisplay.textContent = effectiveBalance.toFixed(2);
+    updateLiveText(balanceDisplay, effectiveBalance.toFixed(2));
 
     const hasOpenTrades = positions.some(p => p.open);
     const uiText = (id, value) => {
         const element = document.getElementById(id);
-        if (element) element.textContent = value;
+        updateLiveText(element, value);
     };
     uiText('cashBalance', '$' + balance.toFixed(2));
     uiText('floatingPL', (floatingPL > 0 ? '+$' : floatingPL < 0 ? '−$' : '$') + Math.abs(floatingPL).toFixed(2));
@@ -460,8 +470,8 @@ function renderTables() {
     for (const trade of openTrades) {
         const cells = openTable.tradeRows.get(trade.id)?.cells;
         if (!cells) continue;
-        cells[3].textContent = data[data.length - 1].close.toFixed(2);
-        cells[4].textContent = trade.profit.toFixed(2);
+        updateLiveText(cells[3], data[data.length - 1].close.toFixed(2));
+        updateLiveText(cells[4], trade.profit.toFixed(2));
         cells[4].className = trade.profit >= 0 ? 'profit' : 'loss';
     }
 
