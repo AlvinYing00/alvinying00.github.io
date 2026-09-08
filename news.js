@@ -9,7 +9,7 @@
 // 4. News duration
 // 5. Hot-news rotation frequency
 //
-// Price impact is applied by script.js on each 250ms tick.
+// Price impact is applied by script.js on each simulated price tick.
 // ============================================================
 
 const NEWS_CONFIG = {
@@ -126,8 +126,8 @@ const NEWS_CONFIG = {
     // Release shock, partial recovery, then noisy price discovery.
     // Fractions are relative to the release price or initial shock.
     reaction: {
-        continuationChance: 0.75, // High/Extreme follow-through probability.
-        continuationReversalChance: 0.7, // Independent countertrend detour within eligible follow-through.
+        continuationChance: 0.6, // High/Extreme follow-through probability.
+        continuationReversalChance: 0.6, // Independent countertrend detour within eligible follow-through.
         falseBreakoutChance: 0.6, // Eligible breakouts that fail and finish against the breakout.
         sustainedReversalChance: 0.6,
         extremeStrengthChance: 0.9,
@@ -273,7 +273,7 @@ function onNewsCandleClosed(candle, nowSeconds) {
     if (Math.random() >= (strength ? cfg.extremeStrengthContinuationChance : cfg.continuationChance)) {
         // Missing the breakout roll means a developing recovery, not a fixed
         // price to orbit for the rest of the event. Strength mode keeps its bias.
-        const ticks=Math.floor((ended.endTime-nowSeconds-0.25)/0.25);
+        const ticks=Math.floor((ended.endTime-nowSeconds-TICK_SECONDS)/TICK_SECONDS + 1e-8);
         if(ticks>0) {
             const direction=strength ? ended.direction : -ended.direction;
             const distance=reaction.size*randomBetween(.55,.95);
@@ -290,12 +290,12 @@ function onNewsCandleClosed(candle, nowSeconds) {
     const breakoutTarget = ended.direction > 0 ? Math.max(reference,startPrice)+margin : Math.max(0.00001,Math.min(reference,startPrice)-margin);
     let target = breakoutTarget;
     // Finish before the active countdown ends, rather than starting at expiration.
-    const ticks = Math.floor((ended.endTime-nowSeconds-0.25)/0.25);
+    const ticks = Math.floor((ended.endTime-nowSeconds-TICK_SECONDS)/TICK_SECONDS + 1e-8);
     if (ticks < 1) return;
     // Separate draw from breakout eligibility: half of continuations take a
     // false-start / countertrend detour before returning to the breakout zone.
     const reversal = !strength && Math.random() < cfg.continuationReversalChance;
-    const falseBreakout = !strength && ticks >= 24 && Math.random() < cfg.falseBreakoutChance;
+    const falseBreakout = !strength && ticks >= legacyTicks(24) && Math.random() < cfg.falseBreakoutChance;
     const sustainedReversal = reversal && !falseBreakout && Math.random() < cfg.sustainedReversalChance;
     const oppositeExtreme = ended.direction > 0 ? Math.min(...candles.map(c => c.low)) : Math.max(...candles.map(c => c.high));
     const legs = [];
@@ -319,7 +319,7 @@ function onNewsCandleClosed(candle, nowSeconds) {
             {target:renewedBreak,ticks:durations[1]},
             {target:target+(renewedBreak-target)*randomBetween(0.2,0.6),ticks:durations[2]},
             {target,ticks:available-durations.reduce((a,b)=>a+b,0)});
-    } else if (reversal && ticks >= 12) {
+    } else if (reversal && ticks >= legacyTicks(12)) {
         const firstTicks = Math.max(1, Math.floor(ticks * randomBetween(0.18, 0.30)));
         const reverseTicks = Math.max(1, Math.floor(ticks * randomBetween(0.25, 0.38)));
         const firstTarget = startPrice + (target - startPrice) * randomBetween(0.3, 0.65);
@@ -340,12 +340,28 @@ function newsNoiseAmplitude(reaction) {
         (reaction.strengthMode ? NEWS_CONFIG.reaction.extremeStrengthMultiplier : 1);
 }
 
+function rescaleNewsTicks(ratio) {
+    const scalePath = path => {
+        path.ticks *= ratio;
+        if (path.turns) path.turns = path.turns.map(t => t * ratio);
+    };
+    if (newsContinuation) {
+        newsContinuation.legs.forEach(scalePath);
+        for (const key of ['remainingTicks','totalTicks','legRemaining']) newsContinuation[key] *= ratio;
+    }
+    const discovery = activeNews?.reaction?.discovery;
+    if (discovery) {
+        scalePath(discovery);
+        discovery.remaining *= ratio;
+    }
+}
+
 function momentumExcursion(previous, remaining, amplitude, guideMove, price) {
     if (remaining<=1) return 0;
     // Persistent intrabar noise crosses candle boundaries. Only the event leg's
     // final few ticks settle toward its outcome; a candle close never resets it.
-    const settling=Math.min(1,(remaining-1)/16);
-    return (previous*0.9+randomBetween(-1,1)*amplitude*0.65)*settling;
+    const settling=Math.min(1,(remaining-1)/legacyTicks(16));
+    return (previous*Math.pow(0.9,TICK_TIME_SCALE)+randomBetween(-1,1)*amplitude*0.65*Math.sqrt((1-Math.pow(0.81,TICK_TIME_SCALE))/(1-0.81)))*settling;
 }
 
 function anticipationMove(nowSeconds, price) {
@@ -359,19 +375,19 @@ function anticipationMove(nowSeconds, price) {
         newsAnticipation = {release,anchor:price,direction:Math.random()<0.5 ? 0 : randomSign(),start:nowSeconds};
     }
     const a = newsAnticipation;
-    const progress = Math.min(1,(nowSeconds-a.start)/Math.max(0.25,a.release-a.start));
+    const progress = Math.min(1,(nowSeconds-a.start)/Math.max(TICK_SECONDS,a.release-a.start));
     const target = a.anchor*(1+a.direction*0.12*progress);
     // News-sized two-sided ticks, without either discrete shock impulse.
-    const move = (target-price)*0.08 + randomBetween(-1,1)*a.anchor*cfg.shockPriceFraction*cfg.noiseFraction;
-    return Math.max(-a.anchor*0.03,Math.min(a.anchor*0.03,move));
+    const move = (target-price)*(1-Math.pow(0.92,TICK_TIME_SCALE)) + randomBetween(-1,1)*a.anchor*cfg.shockPriceFraction*cfg.noiseFraction*TICK_NOISE_SCALE;
+    return Math.max(-a.anchor*0.03*TICK_NOISE_SCALE,Math.min(a.anchor*0.03*TICK_NOISE_SCALE,move));
 }
 
 function continuationGuide(leg, startPrice, tick) {
     if (!leg.path) {
         // Irregular 2–20 second waves, unrelated to 15-second candle boundaries.
         leg.turns=[0];
-        while(leg.ticks-leg.turns.at(-1)>85) {
-            leg.turns.push(leg.turns.at(-1)+Math.floor(randomBetween(9,80)));
+        while(leg.ticks-leg.turns.at(-1)>legacyTicks(85)) {
+            leg.turns.push(leg.turns.at(-1)+legacyTicks(Math.floor(randomBetween(9,80))));
         }
         leg.turns.push(leg.ticks);
         const count=leg.turns.length-1;
@@ -470,7 +486,7 @@ function renderNews(nowSeconds) {
     if (typeof batchingTicks !== 'undefined' && batchingTicks) return;
     const setText = (id, text) => {
         const element = document.getElementById(id);
-        if (element) element.textContent = text;
+        if (element && element.textContent !== text) element.textContent = text;
     };
     const upcoming = NEWS_CONFIG.fixed.enabled
         ? NEWS_CONFIG.fixed.events.map(event => ({event, time: nextFixedNewsTimes[event.id]}))
@@ -503,7 +519,8 @@ function renderNews(nowSeconds) {
             : 'Fixed news is disabled or no events are scheduled.';
     }
     const history = document.getElementById('newsHistory');
-    if (history) {
+    if (history && history.newsSignature !== JSON.stringify(newsHistory)) {
+        history.newsSignature = JSON.stringify(newsHistory);
         history.innerHTML = '';
         for (const event of newsHistory) {
             const row = document.createElement('div');
@@ -526,23 +543,24 @@ function applyNewsToPriceMove(baseMove, nowSeconds, price) {
             const remaining = follow.legRemaining;
             const elapsed=leg.ticks-remaining;
             const guideBefore=continuationGuide(leg,follow.startPrice,elapsed);
-            const guideAfter=continuationGuide(leg,follow.startPrice,elapsed+1);
+            const step = Math.min(1, remaining);
+            const guideAfter=continuationGuide(leg,follow.startPrice,elapsed+step);
             // Noisy bridge: alternating excursions, with an exact final breakout.
             const nextExcursion = momentumExcursion(follow.excursion,remaining,
                 follow.noiseAmplitude,guideAfter-guideBefore,price);
             // Correct any manual price offset gradually, never flatten the
             // unequal candle pushes into one constant-speed reversal.
             const move = guideAfter-guideBefore +
-                (guideBefore+follow.excursion-price)/remaining + nextExcursion-follow.excursion;
+                (guideBefore+follow.excursion-price)/Math.max(1,remaining) + nextExcursion-follow.excursion;
             follow.excursion = nextExcursion;
-            follow.remainingTicks--;
-            follow.legRemaining--;
-            if (!follow.legRemaining && follow.remainingTicks) {
+            follow.remainingTicks -= step;
+            follow.legRemaining -= step;
+            if (follow.legRemaining < 1e-7 && follow.legIndex < follow.legs.length - 1) {
                 follow.legIndex++;
                 follow.legRemaining = follow.legs[follow.legIndex].ticks;
                 follow.startPrice = leg.target;
             }
-            if (!follow.remainingTicks) newsContinuation = null;
+            if (follow.remainingTicks < 1e-7) newsContinuation = null;
             return move;
         }
         if (!activeNews) {
@@ -566,7 +584,7 @@ function applyNewsToPriceMove(baseMove, nowSeconds, price) {
         const panic = activeNews.panic;
         // Direction-independent bursts; no more than two ticks in one direction.
         let sign = panic.run >= 2 ? -panic.sign : randomSign();
-        const magnitude = panic.anchor * randomBetween(cfg.panicMinTickFraction, cfg.panicMaxTickFraction);
+        const magnitude = panic.anchor * randomBetween(cfg.panicMinTickFraction, cfg.panicMaxTickFraction) * TICK_NOISE_SCALE;
         const limit = panic.anchor * cfg.panicMaxDeviationFraction;
         if (Math.abs(price + sign * magnitude - panic.anchor) > limit) sign = -sign;
         panic.run = sign === panic.sign ? panic.run + 1 : 1;
@@ -582,7 +600,7 @@ function applyNewsToPriceMove(baseMove, nowSeconds, price) {
                 ? randomBetween(cfg.mediumPullbackMin, cfg.mediumPullbackMax) : null,
             secondShockDone: false,
             spikeTimes: [currentCandle ? currentCandle.time : time + CANDLE_INTERVAL_MS / 1000],
-            recoverySeconds: Math.max(0.25, (TICKS_PER_CANDLE - candleTickCount - 1) * 0.25) };
+            recoverySeconds: Math.max(TICK_SECONDS, (TICKS_PER_CANDLE - candleTickCount - 1) * TICK_SECONDS) };
         // One delayed shock tick; candle creation/closure stays with the tick engine.
         return activeNews.direction * activeNews.reaction.size;
     }
@@ -593,10 +611,11 @@ function applyNewsToPriceMove(baseMove, nowSeconds, price) {
         if(remaining>0) {
             const elapsed=flow.ticks-remaining;
             const before=continuationGuide(flow,flow.startPrice,elapsed);
-            const after=continuationGuide(flow,flow.startPrice,elapsed+1);
+            const step = Math.min(1,remaining);
+            const after=continuationGuide(flow,flow.startPrice,elapsed+step);
             const excursion=momentumExcursion(flow.excursion,remaining,newsNoiseAmplitude(reaction),after-before,price);
-            const move=after-before+(before+flow.excursion-price)/remaining+excursion-flow.excursion;
-            flow.excursion=excursion;flow.remaining--;
+            const move=after-before+(before+flow.excursion-price)/Math.max(1,remaining)+excursion-flow.excursion;
+            flow.excursion=excursion;flow.remaining=Math.max(0,remaining-step);
             return move;
         }
     }
@@ -616,8 +635,8 @@ function applyNewsToPriceMove(baseMove, nowSeconds, price) {
         const elapsed = nowSeconds - reactionTime;
         const target = reaction.anchor + activeNews.direction * reaction.size * (1 - reaction.mediumPullbackFraction);
         if (elapsed <= reaction.recoverySeconds) {
-            const ticksLeft = Math.max(1, Math.ceil((reaction.recoverySeconds - elapsed) / 0.25) + 1);
-            const noise = ticksLeft <= 1 ? 0 : randomBetween(-1, 1) * newsNoiseAmplitude(reaction) * Math.sqrt((ticksLeft - 1) / ticksLeft);
+            const ticksLeft = Math.max(1, Math.ceil((reaction.recoverySeconds - elapsed) / TICK_SECONDS - 1e-8) + 1);
+            const noise = ticksLeft <= 1 ? 0 : randomBetween(-1, 1) * newsNoiseAmplitude(reaction) * TICK_NOISE_SCALE * Math.sqrt((ticksLeft - 1) / ticksLeft);
             return (target - price) / ticksLeft + noise;
         }
         // The completed spike candle selects the shared continuation/discovery
@@ -629,10 +648,10 @@ function applyNewsToPriceMove(baseMove, nowSeconds, price) {
     if (reaction.strengthMode) {
         const elapsed = nowSeconds-reaction.strengthStart;
         const target = reaction.strengthAnchor+activeNews.direction*size*0.4*Math.min(1,elapsed/30);
-        return (target-price)*0.08 + randomBetween(-1,1)*newsNoiseAmplitude(reaction);
+        return (target-price)*(1-Math.pow(0.92,TICK_TIME_SCALE)) + randomBetween(-1,1)*newsNoiseAmplitude(reaction)*TICK_NOISE_SCALE;
     }
     const progress = Math.min(1, (nowSeconds - reactionTime) /
-        Math.max(0.25, activeNews.endTime - reactionTime));
+        Math.max(TICK_SECONDS, activeNews.endTime - reactionTime));
     const recoveryEnd = cfg.pullbackDurationFraction;
     const retained = progress < recoveryEnd
         ? 1 - cfg.pullbackFraction * progress / recoveryEnd
@@ -640,9 +659,9 @@ function applyNewsToPriceMove(baseMove, nowSeconds, price) {
             (cfg.finalRetentionFraction - (1 - cfg.pullbackFraction)) *
             (progress - recoveryEnd) / (1 - recoveryEnd);
     const target = anchor + activeNews.direction * size * retained;
-    const noise = randomBetween(-1, 1) * newsNoiseAmplitude(reaction);
+    const noise = randomBetween(-1, 1) * newsNoiseAmplitude(reaction) * TICK_NOISE_SCALE;
     // Pull toward a changing reference price, not a fixed one-way tick drift.
-    return (target - price) * cfg.reversionPerTick + noise;
+    return (target - price) * (1-Math.pow(1-cfg.reversionPerTick,TICK_TIME_SCALE)) + noise;
 }
 
 
@@ -657,6 +676,5 @@ function getActiveNews() {
 window.getActiveNews = getActiveNews;
 window.updateNews = updateNews;
 window.NEWS_CONFIG = NEWS_CONFIG;
-
 
 
