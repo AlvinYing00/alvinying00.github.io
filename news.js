@@ -371,8 +371,13 @@ function continuationGuide(leg, startPrice, tick) {
         // Bound normalization so random opposing waves cannot amplify a small
         // net sum into an oversized move. There is no repeating candle pattern.
         const minimum=count*0.3;
-        const adjustment=Math.max(0,(minimum-weights.reduce((a,b)=>a+b,0))/count);
-        for(let i=0;i<count;i++)weights[i]+=adjustment;
+        if(!weights.some(w=>w>0))weights[Math.floor(Math.random()*count)]=randomBetween(.75,1.8);
+        const positive=weights.filter(w=>w>0).reduce((a,b)=>a+b,0);
+        const negative=-weights.filter(w=>w<0).reduce((a,b)=>a+b,0);
+        const positiveScale=Math.max(1,(negative+minimum)/positive);
+        // Scale forward waves only; adding a constant to every weight could
+        // turn all the intended counter-moves into forward staircase steps.
+        for(let i=0;i<count;i++)if(weights[i]>0)weights[i]*=positiveScale;
         const sum=weights.reduce((a,b)=>a+b,0);
         let progress=0;
         leg.path=[startPrice,...weights.map(w=>{
