@@ -126,10 +126,10 @@ const NEWS_CONFIG = {
     // Release shock, partial recovery, then noisy price discovery.
     // Fractions are relative to the release price or initial shock.
     reaction: {
-        continuationChance: 0.6, // High/Extreme follow-through probability.
-        continuationReversalChance: 0.6, // Independent countertrend detour within eligible follow-through.
-        falseBreakoutChance: 0.5, // Eligible breakouts that fail and finish against the breakout.
-        sustainedReversalChance: 0.5,
+        continuationChance: 0.75, // High/Extreme follow-through probability.
+        continuationReversalChance: 0.7, // Independent countertrend detour within eligible follow-through.
+        falseBreakoutChance: 0.6, // Eligible breakouts that fail and finish against the breakout.
+        sustainedReversalChance: 0.6,
         extremeStrengthChance: 0.9,
         extremeStrengthContinuationChance: 0.9,
         extremeStrengthMultiplier: 1.5,
@@ -151,8 +151,6 @@ const NEWS_CONFIG = {
         pullbackFraction: 0.45, // recover part of the initial spike
         mediumPullbackMin: 0.45,
         mediumPullbackMax: 0.75,
-        mediumFollowThroughMin: 0.65, // Travel after recovery, relative to the original spike.
-        mediumFollowThroughMax: 1.15,
         finalRetentionFraction: 0.75, // directional bias after recovery
         reversionPerTick: 0.12,
         noiseFraction: 0.09 // Constant two-sided tick volatility throughout active news.
@@ -265,7 +263,7 @@ function startNews(event, type, nowSeconds) {
 // Start follow-through only after the actual spike candle has closed.
 function onNewsCandleClosed(candle, nowSeconds) {
     const ended = activeNews;
-    if (!ended || !ended.reaction || ended.emotionalImpact === 'medium') return;
+    if (!ended || !ended.reaction) return;
     const reaction = ended.reaction;
     if (reaction.continuationDecided || !reaction.spikeTimes.includes(candle.time)) return;
     if (ended.emotionalImpact === 'extreme' && !reaction.secondShockDone) return;
@@ -622,28 +620,9 @@ function applyNewsToPriceMove(baseMove, nowSeconds, price) {
             const noise = ticksLeft <= 1 ? 0 : randomBetween(-1, 1) * newsNoiseAmplitude(reaction) * Math.sqrt((ticksLeft - 1) / ticksLeft);
             return (target - price) / ticksLeft + noise;
         }
-        if (!reaction.mediumTrend) {
-            const ticks = Math.max(1,Math.floor((activeNews.endTime-nowSeconds)/0.25));
-            const distance = reaction.size*randomBetween(cfg.mediumFollowThroughMin,cfg.mediumFollowThroughMax);
-            reaction.mediumTrend = {startPrice:price,
-                target:Math.max(reaction.anchor*0.1,target+activeNews.direction*distance),
-                ticks,remaining:ticks,excursion:0};
-        }
-        const trend = reaction.mediumTrend;
-        const remaining = trend.remaining;
-        if (remaining<=0) return baseMove;
-        const elapsedTicks=trend.ticks-remaining;
-        const before=continuationGuide(trend,trend.startPrice,elapsedTicks);
-        const after=continuationGuide(trend,trend.startPrice,elapsedTicks+1);
-        // Keep the post-pullback destination moving through the news period.
-        // Unequal pushes/counter-candles share the normal candle clock, with
-        // the same tick-noise amplitude used by all other active-news paths.
-        const excursion=momentumExcursion(trend.excursion,remaining,
-            newsNoiseAmplitude(reaction),after-before,price);
-        const move=after-before+(before+trend.excursion-price)/remaining+excursion-trend.excursion;
-        trend.excursion=excursion;
-        trend.remaining--;
-        return move;
+        // The completed spike candle selects the shared continuation/discovery
+        // path above. No separate always-same-direction Medium trend remains.
+        return baseMove;
     }
 
     const {anchor, size} = activeNews.reaction;
