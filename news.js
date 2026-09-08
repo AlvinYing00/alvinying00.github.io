@@ -126,9 +126,9 @@ const NEWS_CONFIG = {
     // Release shock, partial recovery, then noisy price discovery.
     // Fractions are relative to the release price or initial shock.
     reaction: {
-        continuationChance: 0.6, // High/Extreme follow-through probability.
+        continuationChance: 0.75, // High/Extreme follow-through probability.
         continuationReversalChance: 0.6, // Independent countertrend detour within eligible follow-through.
-        falseBreakoutChance: 0.5, // Eligible breakouts that fail and finish against the breakout.
+        falseBreakoutChance: 0.6, // Eligible breakouts that fail and finish against the breakout.
         sustainedReversalChance: 0.5,
         extremeStrengthChance: 0.9,
         extremeStrengthContinuationChance: 0.9,
@@ -136,7 +136,6 @@ const NEWS_CONFIG = {
         anticipationSeconds: 60,
         extremeSecondSpikeDelaySeconds: 4, // Measured from the first spike.
         extremeSecondSpikeFraction: 0.5, // Half the first spike's absolute price change.
-        continuationSeconds: 120,
         // Each event can override these weights using its own impactChances.
         impactChances: {medium: 0.35, high: 0.35, extreme: 0.30},
         delaySeconds: 2, // News is visible immediately; price shock waits two seconds.
@@ -273,7 +272,19 @@ function onNewsCandleClosed(candle, nowSeconds) {
     reaction.continuationDecided = true;
     const cfg = NEWS_CONFIG.reaction;
     const strength = Boolean(reaction.strengthMode);
-    if (Math.random() >= (strength ? cfg.extremeStrengthContinuationChance : cfg.continuationChance)) return;
+    if (Math.random() >= (strength ? cfg.extremeStrengthContinuationChance : cfg.continuationChance)) {
+        // Missing the breakout roll means a developing recovery, not a fixed
+        // price to orbit for the rest of the event. Strength mode keeps its bias.
+        const ticks=Math.floor((ended.endTime-nowSeconds-0.25)/0.25);
+        if(ticks>0) {
+            const direction=strength ? ended.direction : -ended.direction;
+            const distance=reaction.size*randomBetween(.55,.95);
+            reaction.discovery={startPrice:currentTickPrice,startTime:nowSeconds,
+                target:Math.max(reaction.anchor*.1,currentTickPrice+direction*distance),
+                ticks,remaining:ticks,excursion:0,direction};
+        }
+        return;
+    }
     const candles = data.filter(c => reaction.spikeTimes.includes(c.time));
     const reference = ended.direction > 0 ? Math.max(...candles.map(c => c.high)) : Math.min(...candles.map(c => c.low));
     const startPrice = currentTickPrice;
@@ -281,7 +292,7 @@ function onNewsCandleClosed(candle, nowSeconds) {
     const breakoutTarget = ended.direction > 0 ? Math.max(reference,startPrice)+margin : Math.max(0.00001,Math.min(reference,startPrice)-margin);
     let target = breakoutTarget;
     // Finish before the active countdown ends, rather than starting at expiration.
-    const ticks = Math.floor(Math.min(NEWS_CONFIG.reaction.continuationSeconds, ended.endTime-nowSeconds-0.25)/0.25);
+    const ticks = Math.floor((ended.endTime-nowSeconds-0.25)/0.25);
     if (ticks < 1) return;
     // Separate draw from breakout eligibility: half of continuations take a
     // false-start / countertrend detour before returning to the breakout zone.
@@ -579,6 +590,18 @@ function applyNewsToPriceMove(baseMove, nowSeconds, price) {
     }
 
     const reaction = activeNews.reaction;
+    if(reaction.discovery && nowSeconds>reaction.discovery.startTime) {
+        const flow=reaction.discovery, remaining=flow.remaining;
+        if(remaining>0) {
+            const elapsed=flow.ticks-remaining;
+            const before=continuationGuide(flow,flow.startPrice,elapsed);
+            const after=continuationGuide(flow,flow.startPrice,elapsed+1);
+            const excursion=momentumExcursion(flow.excursion,remaining,newsNoiseAmplitude(reaction),after-before,price);
+            const move=after-before+(before+flow.excursion-price)/remaining+excursion-flow.excursion;
+            flow.excursion=excursion;flow.remaining--;
+            return move;
+        }
+    }
     if (activeNews.emotionalImpact === 'extreme' && !reaction.secondShockDone && nowSeconds >= reactionTime + cfg.extremeSecondSpikeDelaySeconds) {
         reaction.secondShockDone = true;
         reaction.spikeTimes.push(currentCandle ? currentCandle.time : time + CANDLE_INTERVAL_MS / 1000);
