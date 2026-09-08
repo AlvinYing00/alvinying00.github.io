@@ -63,9 +63,9 @@ const NEWS_CONFIG = {
         enabled: true,
 
         // Random hot-news rotation.
-        // Once every 25–85 minutes of running market time.
-        minRotationSeconds: 25 * 60,
-        maxRotationSeconds: 85 * 60,
+        // Once every 20–35 minutes of running market time.
+        minRotationSeconds: 20 * 60,
+        maxRotationSeconds: 35 * 60,
 
         events: [
             {
@@ -130,7 +130,7 @@ const NEWS_CONFIG = {
         continuationReversalChance: 0.6, // Independent countertrend detour within eligible follow-through.
         falseBreakoutChance: 0.5, // Eligible breakouts that fail and finish against the breakout.
         sustainedReversalChance: 0.5,
-        extremeStrengthChance: 0.5,
+        extremeStrengthChance: 0.9,
         extremeStrengthContinuationChance: 0.9,
         extremeStrengthMultiplier: 1.5,
         anticipationSeconds: 60,
@@ -138,7 +138,7 @@ const NEWS_CONFIG = {
         extremeSecondSpikeFraction: 0.5, // Half the first spike's absolute price change.
         continuationSeconds: 120,
         // Each event can override these weights using its own impactChances.
-        impactChances: {medium: 0.35, high: 0.35, extreme: 0.30},
+        impactChances: {medium: 0.00, high: 0.00, extreme: 1.00},
         delaySeconds: 2, // News is visible immediately; price shock waits two seconds.
         panicMinTickFraction: 0.012, // Pre-spike moves: 1.2–3.5% of release price per tick.
         panicMaxTickFraction: 0.035,
@@ -342,6 +342,25 @@ function anticipationMove(nowSeconds, price) {
     return Math.max(-a.anchor*0.03,Math.min(a.anchor*0.03,move));
 }
 
+function continuationGuide(leg, startPrice, tick) {
+    if (!leg.path) {
+        // Uneven pushes and smaller counter-moves; targets remain event-local.
+        const count=Math.max(1,Math.floor(leg.ticks/60));
+        const weights=Array.from({length:count},(_,i)=>
+            count>=3 && i%3===1 ? -randomBetween(0.4,0.8) : randomBetween(0.75,1.8));
+        const sum=weights.reduce((a,b)=>a+b,0);
+        let progress=0;
+        leg.path=[startPrice,...weights.map(w=>{
+            progress+=w/sum;
+            return startPrice+(leg.target-startPrice)*progress;
+        })];
+        leg.path[leg.path.length-1]=leg.target;
+    }
+    const position=Math.min(leg.path.length-1,tick/leg.ticks*(leg.path.length-1));
+    const index=Math.min(leg.path.length-2,Math.floor(position));
+    return leg.path[index]+(leg.path[index+1]-leg.path[index])*(position-index);
+}
+
 function updateNews(nowSeconds) {
 
     if (activeNews && nowSeconds >= activeNews.endTime) {
@@ -457,11 +476,17 @@ function applyNewsToPriceMove(baseMove, nowSeconds, price) {
             if (nowSeconds <= follow.startTime) return baseMove * NEWS_CONFIG.volatility.normalMultiplier;
             const leg = follow.legs[follow.legIndex];
             const remaining = follow.legRemaining;
+            const elapsed=leg.ticks-remaining;
+            const guideBefore=continuationGuide(leg,follow.startPrice,elapsed);
+            const guideAfter=continuationGuide(leg,follow.startPrice,elapsed+1);
             // Noisy bridge: alternating excursions, with an exact final breakout.
             const amplitude = Math.max(Math.abs(leg.target - follow.startPrice), follow.startPrice * 0.04);
             const nextExcursion = remaining <= 1 ? 0 : follow.excursion * (remaining - 1) / remaining +
                 randomBetween(-1, 1) * amplitude * 0.055 * (follow.strength ? NEWS_CONFIG.reaction.extremeStrengthMultiplier : 1) * Math.sqrt((remaining - 1) / remaining);
-            const move = (leg.target - price + follow.excursion) / remaining + nextExcursion - follow.excursion;
+            // Correct any manual price offset gradually, never flatten the
+            // unequal candle pushes into one constant-speed reversal.
+            const move = guideAfter-guideBefore +
+                (guideBefore+follow.excursion-price)/remaining + nextExcursion-follow.excursion;
             follow.excursion = nextExcursion;
             follow.remainingTicks--;
             follow.legRemaining--;
@@ -477,6 +502,9 @@ function applyNewsToPriceMove(baseMove, nowSeconds, price) {
             const anticipation = anticipationMove(nowSeconds,price);
             if (anticipation !== null) {
                 resetQuietMarket();
+                currentPattern=null;
+                patternQueue=[];
+                patternCooldown=12;
                 return anticipation;
             }
             return baseMove * NEWS_CONFIG.volatility.normalMultiplier;
