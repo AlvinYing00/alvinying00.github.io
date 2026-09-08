@@ -41,6 +41,12 @@ let quietPath = null;
 let quietCooldown = STRUCTURE_CONFIG.minCooldown;
 let quietMomentum = null;
 
+// Shared preload/live price process: small multiplicative random ticks with
+// drift, not a route through prescribed candle opens, extremes and closes.
+function sampleMarketMove(price, drift, volatility = 1) {
+    return price * Math.expm1(drift + (Math.random() - 0.5) * 0.006 * volatility);
+}
+
 function resetQuietMarket() {
     quietMomentum = null;
     quietSetup = null;
@@ -72,17 +78,11 @@ function buildQuietPath(defaultClose) {
         quietPath = null;
         return; // Setups have their own continuous path across candle boundaries.
     }
-    const close = Math.max(open * 0.975, Math.min(open * 1.025, defaultClose));
-    const body = Math.abs(close - open);
-    const decisive = body > open * 0.006 && Math.random() < 0.75;
-    const wick = decisive ? open*(0.0008+Math.random()*0.0015)+body*0.08 :
-        open*(0.002+Math.random()*0.003)+body*0.15;
-    let high = Math.max(open, close) + wick * (0.6 + Math.random());
-    let low = Math.max(open * 0.5, Math.min(open, close) - wick * (0.6 + Math.random()));
-    // Visit both extremes through actual ticks, with randomized turning times.
-    const lowFirst = decisive ? close > open : Math.random() < 0.5;
-    quietPath = { points: [open, lowFirst ? low : high, lowFirst ? high : low, close],
-        ticks: [0, 12 + Math.floor(Math.random() * 9), 36 + Math.floor(Math.random() * 9), 60] };
+    quietPath = {
+        drift: Math.max(-0.0004,Math.min(0.0004,(defaultClose/open-1)/120)),
+        target: currentPattern ? defaultClose : null,
+        volatility: 0.85+Math.random()*0.3
+    };
 }
 
 function startQuietSetup(direction, level, unit) {
@@ -127,22 +127,17 @@ function structureTickMove() {
     }
     const driftLimit = u * STRUCTURE_CONFIG.driftFraction;
     const drift = Math.max(-driftLimit, Math.min(driftLimit, (s.target - currentTickPrice) * 0.015));
-    const move = drift + s.swing + (Math.random() - 0.5) * 2 * Math.max(u * STRUCTURE_CONFIG.noiseFraction, currentTickPrice*0.0035);
-    return Math.max(-currentTickPrice*0.008,Math.min(currentTickPrice*0.008,move));
+    const bias=Math.max(-0.0006,Math.min(0.0006,(drift+s.swing)/currentTickPrice));
+    return sampleMarketMove(currentTickPrice,bias,1.05);
 }
 
 function quietTickMove() {
     if (quietSetup) return structureTickMove();
     // News may expire mid-candle; keep ticking until a fresh full-bar path starts.
-    if (!quietPath) return (Math.random() - 0.5) * currentTickPrice * 0.008;
-    const tick = candleTickCount + 1;
-    const segment = quietPath.ticks.findIndex(t => t >= tick);
-    const remaining = quietPath.ticks[segment] - tick + 1;
-    const target = quietPath.points[segment];
-    const noiseScale = Math.max(quietPath.points[0] * 0.004, Math.abs(target - currentTickPrice) / remaining * 3);
-    const noise = remaining === 1 ? 0 : (Math.random() - 0.5) * noiseScale;
-    const move = (target - currentTickPrice) / remaining + noise;
-    return Math.max(-currentTickPrice*0.008, Math.min(currentTickPrice*0.008,move));
+    if (!quietPath) return sampleMarketMove(currentTickPrice,0);
+    const drift=quietPath.target === null ? quietPath.drift :
+        Math.max(-0.0006,Math.min(0.0006,(quietPath.target/currentTickPrice-1)/120));
+    return sampleMarketMove(currentTickPrice,drift,quietPath.volatility);
 }
 
 const volatilitySelect = document.getElementById('volatilitySelect');
@@ -320,7 +315,7 @@ function initChart(priceMin = 9, priceMax = 10) {
     const candle = {time: (time += CANDLE_INTERVAL_MS / 1000), open: price, high: price, low: price, close: price};
     const drift = (Math.random() - 0.5) * 0.0008;
     for (let tick = 0; tick < TICKS_PER_CANDLE; tick++) {
-      price *= Math.exp(drift + (Math.random() - 0.5) * 0.006);
+      price += sampleMarketMove(price,drift);
       candle.high = Math.max(candle.high, price);
       candle.low = Math.min(candle.low, price);
     }
@@ -702,7 +697,7 @@ function applyManualMove(direction) {
   if (!Number.isFinite(targetPrice)) return notifyTrading('Enter a valid number for the manual price move.');
   updateCurrentCandle(targetPrice);
   // Keep the remaining intrabar path relative to the manually shifted price.
-  if (quietPath) quietPath.points = quietPath.points.map(p => Math.max(0.00001, p + targetPrice - previousPrice));
+  if (quietPath && quietPath.target !== null) quietPath.target = Math.max(0.00001,quietPath.target+targetPrice-previousPrice);
   quietSetup = null;
   quietCooldown = STRUCTURE_CONFIG.minCooldown;
   triggerRetracement(previousPrice, targetPrice);
