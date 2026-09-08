@@ -15,10 +15,55 @@ let time = 0;
 let marketInterval = null;
 
 // ---- High-frequency tick engine ----
-// Price moves every 250ms; one chart candle represents 15 seconds.
-const TICK_INTERVAL_MS = 250;
+// News cadence changes with event age; candles always represent 15 seconds.
+const DYNAMIC_TICKS = true;
+let TICK_INTERVAL_MS = 200;
+let TICK_SECONDS = TICK_INTERVAL_MS / 1000;
+// Calibrate drift and diffusion against the original 250 ms engine.
+let TICK_TIME_SCALE = TICK_INTERVAL_MS / 250;
+let TICK_NOISE_SCALE = Math.sqrt(TICK_TIME_SCALE);
+const legacyTicks = ticks => Math.round(ticks / TICK_TIME_SCALE);
 const CANDLE_INTERVAL_MS = 15000;
-const TICKS_PER_CANDLE = CANDLE_INTERVAL_MS / TICK_INTERVAL_MS;
+let TICKS_PER_CANDLE = CANDLE_INTERVAL_MS / TICK_INTERVAL_MS;
+
+function nextTickDuration() {
+    if (!DYNAMIC_TICKS) return TICK_INTERVAL_MS;
+    const now = Math.round(marketSeconds * 1000);
+    const age = activeNews ? now - Math.round(activeNews.startTime * 1000) : Infinity;
+    let duration = activeNews ? (age < 30000 ? 25 : age < 60000 ? 50 : 100) : 200;
+    // Land on candle and event boundaries even for a mid-candle hot release.
+    const boundaries = [now + CANDLE_INTERVAL_MS - now % CANDLE_INTERVAL_MS];
+    if (newsContinuation) boundaries.push(now + newsContinuation.legRemaining * TICK_INTERVAL_MS);
+    const discovery = activeNews?.reaction?.discovery;
+    if (discovery?.remaining > 0) boundaries.push(now + discovery.remaining * TICK_INTERVAL_MS);
+    if (activeNews) {
+        boundaries.push(activeNews.startTime * 1000 + 30000,
+            activeNews.startTime * 1000 + 60000, activeNews.endTime * 1000);
+    } else {
+        if (NEWS_CONFIG.fixed.enabled) boundaries.push(...Object.values(nextFixedNewsTimes).map(t => t * 1000));
+        if (NEWS_CONFIG.hot.enabled) boundaries.push(nextHotNewsTime * 1000);
+    }
+    for (const boundary of boundaries) {
+        const remaining = Math.ceil(boundary - now - 1e-7);
+        if (remaining > 0) duration = Math.min(duration, remaining);
+    }
+    return duration;
+}
+
+function setTickDuration(duration) {
+    if (duration === TICK_INTERVAL_MS) return;
+    const ratio = TICK_INTERVAL_MS / duration;
+    // Preserve elapsed candle time and in-progress paths across cadence changes.
+    candleTickCount *= ratio;
+    if (priceActionState) priceActionState.waveTicks *= ratio;
+    if (quietSetup) for (const key of ['age','minTicks','swingTicks']) quietSetup[key] *= ratio;
+    rescaleNewsTicks(ratio);
+    TICK_INTERVAL_MS = duration;
+    TICK_SECONDS = duration / 1000;
+    TICK_TIME_SCALE = duration / 250;
+    TICK_NOISE_SCALE = Math.sqrt(TICK_TIME_SCALE);
+    TICKS_PER_CANDLE = CANDLE_INTERVAL_MS / duration;
+}
 
 let tickInterval = null;
 let lastTickWallTime = null;
@@ -107,13 +152,14 @@ function priceActionTickMove() {
     }
     const s=priceActionState;
     if(s.waveTicks--<=0) {
-        s.waveTicks=18+Math.floor(Math.random()*73);
+        s.waveTicks=legacyTicks(18+Math.floor(Math.random()*73));
         const pullbackChance=.15+Math.min(.5,Math.max(0,s.run-1)*.075+Math.max(0,s.extension-1)*.08);
         s.wave=Math.random()<pullbackChance ? -s.trendDirection*(.0002+Math.random()*.00025) :
             (Math.random()-.5)*.0006;
     }
     const targetDrift=s.score*.00025+s.wave;
-    s.drift=s.drift*.94+targetDrift*.06;
+    const persistence = Math.pow(.94, TICK_TIME_SCALE);
+    s.drift=s.drift*persistence+targetDrift*(1-persistence);
     return sampleMarketMove(currentTickPrice,Math.max(-.0006,Math.min(.0006,s.drift)),s.volatility);
 }
 
@@ -125,7 +171,7 @@ function setQuietEngine(value) {
 // Shared preload/live price process: small multiplicative random ticks with
 // drift, not a route through prescribed candle opens, extremes and closes.
 function sampleMarketMove(price, drift, volatility = 1) {
-    return price * Math.expm1(drift + (Math.random() - 0.5) * 0.006 * volatility);
+    return price * Math.expm1(drift * TICK_TIME_SCALE + (Math.random() - 0.5) * 0.006 * volatility * TICK_NOISE_SCALE);
 }
 
 function resetQuietMarket() {
@@ -177,7 +223,7 @@ function setQuietPhase(target) {
     s.target = Math.max(0.00001, target);
     s.travelDirection = Math.sign(s.target - currentTickPrice) || s.direction;
     s.age = 0;
-    s.minTicks = STRUCTURE_CONFIG.minPhaseTicks + Math.floor(Math.random() * STRUCTURE_CONFIG.extraPhaseTicks);
+    s.minTicks = legacyTicks(STRUCTURE_CONFIG.minPhaseTicks + Math.floor(Math.random() * STRUCTURE_CONFIG.extraPhaseTicks));
     s.swingTicks = 0;
 }
 
@@ -204,7 +250,7 @@ function structureTickMove() {
     // Short random waves sometimes oppose the destination, producing pullbacks
     // across ticks AND candles. Their duration is independent of candle boundaries.
     if (s.swingTicks-- <= 0) {
-        s.swingTicks = 20 + Math.floor(Math.random() * 100);
+        s.swingTicks = legacyTicks(20 + Math.floor(Math.random() * 100));
         s.swing = (Math.random() - 0.5) * u * 0.035;
     }
     const driftLimit = u * STRUCTURE_CONFIG.driftFraction;
@@ -578,8 +624,10 @@ function generateMarketTick() {
 
     if (!marketInterval) return;
 
-    // 250ms = 0.25 second.
-    marketSeconds += TICK_INTERVAL_MS / 1000;
+    setTickDuration(nextTickDuration());
+    if (DYNAMIC_TICKS) candleTickCount = (Math.round(marketSeconds * 1000) % CANDLE_INTERVAL_MS) / TICK_INTERVAL_MS;
+    // Millisecond rounding prevents accumulated floating-point timer drift.
+    marketSeconds = Math.round((marketSeconds + TICK_SECONDS) * 1000) / 1000;
 
     // Resolve releases first so quiet setups cannot act on a news-release tick.
     updateNews(marketSeconds);
@@ -628,7 +676,7 @@ function generateMarketTick() {
     candleTickCount++;
 
     // Finalize every 15 seconds.
-    if (candleTickCount >= TICKS_PER_CANDLE) {
+    if (candleTickCount >= TICKS_PER_CANDLE - 1e-7) {
 
         candleTickCount = 0;
 
@@ -658,7 +706,7 @@ function startTickEngine() {
 
     tickInterval = setInterval(
         syncMarketClock,
-        TICK_INTERVAL_MS
+        DYNAMIC_TICKS ? 25 : TICK_INTERVAL_MS
     );
 }
 
@@ -666,14 +714,15 @@ function syncMarketClock(flush = false) {
     if (!marketInterval || lastTickWallTime === null) return;
     const now = Date.now();
     if (now < lastTickWallTime) { lastTickWallTime = now; return; }
-    const due = Math.floor((now - lastTickWallTime) / TICK_INTERVAL_MS);
-    const count = flush ? due : Math.min(due, 2400);
-    if (!count) return;
-    batchingTicks = count > 1;
+    if (now - lastTickWallTime < nextTickDuration()) return;
+    // Re-evaluate each interval during catch-up: a backlog can span news phases.
+    batchingTicks = now - lastTickWallTime >= nextTickDuration() * 2;
+    let count = 0;
     try {
-        for (let tick = 0; tick < count; tick++) {
+        while ((flush || count < 2400) && now - lastTickWallTime >= nextTickDuration()) {
             generateMarketTick();
             lastTickWallTime += TICK_INTERVAL_MS;
+            count++;
         }
     } finally {
         const needsRefresh = batchingTicks;
@@ -685,7 +734,7 @@ function syncMarketClock(flush = false) {
         }
     }
     // Large backlogs yield between batches so the page stays responsive.
-    if (due > count && catchUpTimer === null) {
+    if (now - lastTickWallTime >= nextTickDuration() && catchUpTimer === null) {
         catchUpTimer = setTimeout(() => {
             catchUpTimer = null;
             syncMarketClock();
@@ -847,7 +896,7 @@ function toggleMarket() {
     marketInterval = true;
     startTickEngine();
 
-    console.log('Market started. Price ticks every 0.25s; candles every 15s.');
+    console.log(`Market started. Price ticks every ${TICK_INTERVAL_MS}ms; candles every 15s.`);
 
     if (typeof window.setMarketOpen === "function") {
       window.setMarketOpen(true);
@@ -869,7 +918,7 @@ function updateMarketControls() {
     status.className = marketInterval ? 'statusBadge running' : 'statusBadge';
   }
   const countdown = document.getElementById('candleCountdown');
-  if (countdown) countdown.textContent = ((TICKS_PER_CANDLE - candleTickCount) * 0.25).toFixed(1) + 's';
+  if (countdown) countdown.textContent = ((TICKS_PER_CANDLE - candleTickCount) * TICK_SECONDS).toFixed(1) + 's';
 }
 
 function resetPriceScale() {
@@ -962,6 +1011,7 @@ function applyVolatility(level) {
     if (marketInterval) lastTickWallTime = Date.now();
     resetNews(marketSeconds);
     resetQuietMarket();
+    if (DYNAMIC_TICKS) setTickDuration(200);
     candleMove = null;
     candleExcursion = 0;
     smoothedVol = null;
