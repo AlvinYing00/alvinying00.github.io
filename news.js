@@ -127,9 +127,9 @@ const NEWS_CONFIG = {
     // Fractions are relative to the release price or initial shock.
     reaction: {
         continuationChance: 0.6, // High/Extreme follow-through probability.
-        continuationReversalChance: 0.6, // Independent countertrend detour within eligible follow-through.
-        falseBreakoutChance: 0.6, // Eligible breakouts that fail and finish against the breakout.
-        sustainedReversalChance: 0.6,
+        continuationReversalChance: 0.5, // Independent countertrend detour within eligible follow-through.
+        falseBreakoutChance: 0.5, // Eligible breakouts that fail and finish against the breakout.
+        sustainedReversalChance: 0.5,
         extremeStrengthChance: 0.9,
         extremeStrengthContinuationChance: 0.9,
         extremeStrengthMultiplier: 1.5,
@@ -486,7 +486,7 @@ function renderNews(nowSeconds) {
     if (typeof batchingTicks !== 'undefined' && batchingTicks) return;
     const setText = (id, text) => {
         const element = document.getElementById(id);
-        if (element && element.textContent !== text) element.textContent = text;
+        updateLiveText(element, text);
     };
     const upcoming = NEWS_CONFIG.fixed.enabled
         ? NEWS_CONFIG.fixed.events.map(event => ({event, time: nextFixedNewsTimes[event.id]}))
@@ -512,11 +512,12 @@ function renderNews(nowSeconds) {
     const notice = document.getElementById('fixedNewsNotice');
     if (notice) {
         notice.className = warnings.length ? 'news-countdown' : '';
-        notice.textContent = warnings.length
+        const noticeText = warnings.length
             ? warnings.map(({event,time}) => `${event.name} — ${time <= nowSeconds ? 'Awaiting current news to finish' : `Starts in ${formatNewsClock(time - nowSeconds)}`}`).join(' • ')
             : next ? `${next.event.name} — Starts in ${formatNewsClock(next.time - nowSeconds)}`
             : activeNews?.type === 'fixed' ? 'The next fixed-news countdown starts when this release ends.'
             : 'Fixed news is disabled or no events are scheduled.';
+        updateLiveText(notice, noticeText);
     }
     const history = document.getElementById('newsHistory');
     if (history && history.newsSignature !== JSON.stringify(newsHistory)) {
