@@ -21,7 +21,7 @@ const NEWS_CONFIG = {
         enabled: true,
         firstDelaySeconds: 60,
         gapAfterEndSeconds: 15 * 60,
-        durationSeconds: 120, // All fixed-news reaction types.
+        durationSeconds: 5 * 60, // All fixed-news reaction types.
 
         // Events rotate in this order after each release ends.
         events: [
@@ -138,7 +138,7 @@ const NEWS_CONFIG = {
         extremeSecondSpikeFraction: 0.5, // Half the first spike's absolute price change.
         continuationSeconds: 120,
         // Each event can override these weights using its own impactChances.
-        impactChances: {medium: 035, high: 0.35, extreme: 0.30},
+        impactChances: {medium: 0.35, high: 0.35, extreme: 0.30},
         delaySeconds: 2, // News is visible immediately; price shock waits two seconds.
         panicMinTickFraction: 0.012, // Pre-spike moves: 1.2–3.5% of release price per tick.
         panicMaxTickFraction: 0.035,
@@ -326,8 +326,8 @@ function onNewsCandleClosed(candle, nowSeconds) {
 
 function anticipationMove(nowSeconds, price) {
     const cfg = NEWS_CONFIG.reaction;
-    const due = [...(NEWS_CONFIG.fixed.enabled ? Object.values(nextFixedNewsTimes) : []),
-        ...(NEWS_CONFIG.hot.enabled && nextHotNewsTime ? [nextHotNewsTime] : [])]
+    // Unexpected hot news must never signal its arrival through anticipation.
+    const due = (NEWS_CONFIG.fixed.enabled ? Object.values(nextFixedNewsTimes) : [])
         .filter(t => t > nowSeconds && t-nowSeconds <= cfg.anticipationSeconds);
     if (activeNews || !due.length) { newsAnticipation=null; return null; }
     const release = Math.min(...due);
