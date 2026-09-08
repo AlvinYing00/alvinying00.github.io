@@ -7,6 +7,7 @@ const chart = LightweightCharts.createChart(
                  grid: { vertLines: { color: '#1a2532' }, horzLines: { color: '#1a2532' } },
                  rightPriceScale: {borderColor: '#24303f', autoScale: true, scaleMargins: {top: 0.12, bottom: 0.12}},
                  timeScale: {borderColor: '#24303f', timeVisible: true, secondsVisible: true, rightOffset: 5},
+                 handleScroll: {vertTouchDrag: false, horzTouchDrag: true},
                  crosshair: {vertLine: {color: '#60768e', labelBackgroundColor: '#30445b'}, horzLine: {color: '#60768e', labelBackgroundColor: '#30445b'}} });
 const candleSeries = chart.addCandlestickSeries({upColor:'#54d7aa', downColor:'#f3788e', borderVisible:false, wickUpColor:'#54d7aa', wickDownColor:'#f3788e'});
 
@@ -513,7 +514,7 @@ function updatePriceDisplay() {
   }
 
   // Update current price
-  priceDisplay.textContent = fmt(last);
+  updateLiveText(priceDisplay, fmt(last));
 
   // Set color (green/red/neutral)
   if (last > prev) {
@@ -533,8 +534,8 @@ function updatePriceDisplay() {
   }
 
   // Update high/low display
-  document.getElementById('highDisplay').textContent = fmt(sessionHigh);
-  document.getElementById('lowDisplay').textContent = fmt(sessionLow);
+  updateLiveText(document.getElementById('highDisplay'), fmt(sessionHigh));
+  updateLiveText(document.getElementById('lowDisplay'), fmt(sessionLow));
 }
 
 // ---- Utility: trigger retracement ----
@@ -911,14 +912,14 @@ function updateMarketControls() {
     if (control) control.disabled = !marketInterval;
   }
   const button = document.getElementById('marketToggle');
-  if (button) button.textContent = marketInterval ? 'Ⅱ Pause market' : '▶ Start market';
+  updateLiveText(button, marketInterval ? 'Ⅱ Pause market' : '▶ Start market');
   const status = document.getElementById('marketStatus');
   if (status) {
-    status.textContent = marketInterval ? '● Market running' : '● Paused';
+    updateLiveText(status, marketInterval ? '● Market running' : '● Paused');
     status.className = marketInterval ? 'statusBadge running' : 'statusBadge';
   }
   const countdown = document.getElementById('candleCountdown');
-  if (countdown) countdown.textContent = ((TICKS_PER_CANDLE - candleTickCount) * TICK_SECONDS).toFixed(1) + 's';
+  updateLiveText(countdown, ((TICKS_PER_CANDLE - candleTickCount) * TICK_SECONDS).toFixed(1) + 's');
 }
 
 function resetPriceScale() {
@@ -947,8 +948,15 @@ document.getElementById('autoScale')?.addEventListener('change', e => {
 chartElement.addEventListener('pointerup', () => {
   document.getElementById('autoScale').checked = chart.priceScale('right').options().autoScale;
 });
+let chartWidth = chartElement.clientWidth, chartHeight = chartElement.clientHeight;
+function resizeChartIfNeeded() {
+  const width = chartElement.clientWidth, height = chartElement.clientHeight;
+  if (!width || !height || (width === chartWidth && height === chartHeight)) return;
+  chartWidth = width; chartHeight = height;
+  chart.resize(width, height);
+}
 if (typeof ResizeObserver !== 'undefined') {
-  new ResizeObserver(() => chart.resize(chartElement.clientWidth, chartElement.clientHeight)).observe(chartElement);
+  new ResizeObserver(resizeChartIfNeeded).observe(chartElement);
 }
 
 function createOrUpdateTPLine(trade) {
@@ -1056,9 +1064,7 @@ window.addEventListener('load', () => {
 });
 
 
-window.addEventListener('resize', () => {
-  chart.resize(chartElement.clientWidth, chartElement.clientHeight);
-});
+window.addEventListener('resize', resizeChartIfNeeded);
 
 window.createOrUpdateTPLine = createOrUpdateTPLine;
 window.createOrUpdateSLLine = createOrUpdateSLLine;
