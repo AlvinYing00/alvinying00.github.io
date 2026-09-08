@@ -469,6 +469,14 @@ function renderNews(nowSeconds) {
         : [];
     const warnings = upcoming.filter(item => item.time - nowSeconds <= FIXED_NEWS_WARNING_SECONDS);
     const next = upcoming[0];
+    const chartNews=document.getElementById('chartNews');
+    if(chartNews) {
+        chartNews.className='chartNews'+(activeNews ? ` active ${activeNews.type}` : warnings.length ? ' incoming' : '');
+        setText('chartNewsLabel',activeNews ? `ACTIVE ${activeNews.type.toUpperCase()} NEWS` : next ? 'INCOMING NEWS' : 'MARKET NEWS');
+        setText('chartNewsName',activeNews ? activeNews.name : next ? next.event.name : 'No scheduled release');
+        setText('chartNewsClock',activeNews ? `${formatNewsClock(activeNews.endTime-nowSeconds)} remaining` :
+            next ? `Starts in ${formatNewsClock(next.time-nowSeconds)}` : 'Market calm');
+    }
     const panel = document.getElementById('newsPanel');
     if (panel) panel.className = activeNews ? `news-active ${activeNews.type}-news` : '';
     setText('newsStatus', activeNews ? '● NEWS ACTIVE' : warnings.length ? '● NEWS INCOMING' : '● MARKET CALM');
