@@ -63,9 +63,9 @@ const NEWS_CONFIG = {
         enabled: true,
 
         // Random hot-news rotation.
-        // Once every 20–35 minutes of running market time.
-        minRotationSeconds: 20 * 60,
-        maxRotationSeconds: 35 * 60,
+        // Once every 25–85 minutes of running market time.
+        minRotationSeconds: 25 * 60,
+        maxRotationSeconds: 85 * 60,
 
         events: [
             {
@@ -138,7 +138,7 @@ const NEWS_CONFIG = {
         extremeSecondSpikeFraction: 0.5, // Half the first spike's absolute price change.
         continuationSeconds: 120,
         // Each event can override these weights using its own impactChances.
-        impactChances: {medium: 0.00, high: 0.00, extreme: 1.00},
+        impactChances: {medium: 035, high: 0.35, extreme: 0.30},
         delaySeconds: 2, // News is visible immediately; price shock waits two seconds.
         panicMinTickFraction: 0.012, // Pre-spike moves: 1.2–3.5% of release price per tick.
         panicMaxTickFraction: 0.035,
