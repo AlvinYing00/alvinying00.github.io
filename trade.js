@@ -325,7 +325,7 @@ function updateFloatingPL(enforceMargin = true) {
     if (!data || data.length === 0) return;
 
     const lastCandle = data[data.length - 1];
-    // Use live 250ms tick price when available.
+    // Use live tick price when available.
     const closePrice =
         typeof currentTickPrice === "number"
             ? currentTickPrice
@@ -432,8 +432,13 @@ function renderTables() {
     }
 
     // Open Trades
-    openTable.innerHTML = "";
-    positions.filter(p => p.open).forEach(trade => {
+    const openTrades = positions.filter(p => p.open);
+    const openSignature = JSON.stringify([marketOpen, openTrades.map(p => [p.id, p.type, p.entry])]);
+    if (openTable.tradeSignature !== openSignature) {
+      openTable.tradeSignature = openSignature;
+      openTable.tradeRows = new Map();
+      openTable.innerHTML = "";
+      openTrades.forEach(trade => {
         const profitClass = trade.profit >= 0 ? "profit" : "loss";
         const row = document.createElement("tr");
         row.innerHTML = `
@@ -448,11 +453,25 @@ function renderTables() {
                 <button onclick="closeTrade(${trade.id})" ${marketOpen ? '' : 'disabled'}>Close</button>
             </td>`;
         openTable.appendChild(row);
-    });
+        openTable.tradeRows.set(trade.id, row);
+      });
+    }
+    // Keep action buttons mounted while updating prices and P/L every tick.
+    for (const trade of openTrades) {
+        const cells = openTable.tradeRows.get(trade.id)?.cells;
+        if (!cells) continue;
+        cells[3].textContent = data[data.length - 1].close.toFixed(2);
+        cells[4].textContent = trade.profit.toFixed(2);
+        cells[4].className = trade.profit >= 0 ? 'profit' : 'loss';
+    }
 
     // Trade History
+    const closedTrades = positions.filter(p => !p.open);
+    const historySignature = JSON.stringify(closedTrades);
+    if (historyTable.tradeSignature === historySignature) return;
+    historyTable.tradeSignature = historySignature;
     historyTable.innerHTML = "";
-    positions.filter(p => !p.open).forEach(trade => {
+    closedTrades.forEach(trade => {
         const profitClass = trade.profit >= 0 ? "profit" : "loss";
         const row = document.createElement("tr");
         row.innerHTML = `
