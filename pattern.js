@@ -1,192 +1,32 @@
-//pattern.js
-
-function generateDoubleTopCandle() {
-  if (!currentPattern) return;
-  const lastPrice = data[data.length - 1].close;
-  const totalSteps = currentPattern.totalSteps;
-  const step = totalSteps - currentPattern.steps;
-
-  let newClose = lastPrice;
-
-  if (step < totalSteps * 0.2) {
-    newClose = lastPrice + getVolatility(lastPrice) * 1.5;
-  } else if (step < totalSteps * 0.35) {
-    newClose = lastPrice + (Math.random() - 0.5) * getVolatility(lastPrice) * 0.2;
-  } else if (step < totalSteps * 0.55) {
-    newClose = lastPrice - getVolatility(lastPrice) * 0.8;
-  } else if (step < totalSteps * 0.75) {
-    if (!currentPattern.firstTopPrice) currentPattern.firstTopPrice = sessionHigh || lastPrice;
-    const target = currentPattern.firstTopPrice;
-    newClose = lastPrice + (target - lastPrice) * 0.3 + (Math.random() - 0.5) * getVolatility(lastPrice) * 0.2;
-  } else {
-    newClose = lastPrice - getVolatility(lastPrice) * 1.2;
+// Synthetic chart-pattern targets, anchored to the start of this pattern.
+// The tick engine alone creates OHLC and advances the 15-second candle clock.
+function patternTarget(name) {
+  const p=currentPattern;
+  if (!p) return data[data.length-1].close;
+  if (!p.anchor) {
+    p.anchor=currentTickPrice ?? data[data.length-1].close;
+    p.amplitude=p.anchor*(0.035+Math.random()*0.02);
+    p.sign=Math.random()<0.5?-1:1;
   }
-
-  return Math.max(0.00001, newClose);
+  const shapes={
+    doubleTop:[0,1,0.3,0.97,0.25,-0.45],
+    doubleBottom:[0,-1,-0.3,-0.97,-0.25,0.45],
+    headShoulders:[0,0.65,0.15,1,0.15,0.65,-0.5],
+    triangle:[0,1,-0.8,0.65,-0.45,0.3,-0.15,1.1],
+    flag:[0,1,0.65,0.85,0.5,0.72,1.45],
+    wedge:[0,0.7,0.25,1,0.65,1.2,1,-0.1]
+  };
+  const shape=shapes[name];
+  const progress=(p.totalSteps-p.steps+1)/p.totalSteps;
+  const position=Math.min(shape.length-1,progress*(shape.length-1));
+  const i=Math.min(shape.length-2,Math.floor(position));
+  const offset=shape[i]+(shape[i+1]-shape[i])*(position-i);
+  const sign=['triangle','flag','wedge'].includes(name)?p.sign:1;
+  return Math.max(0.00001,p.anchor+sign*p.amplitude*offset+(Math.random()-.5)*p.amplitude*.045);
 }
-
-function generateDoubleBottomCandle() {
-  if (!currentPattern) return;
-  const lastPrice = data[data.length - 1].close;
-  const totalSteps = currentPattern.totalSteps;
-  const step = totalSteps - currentPattern.steps;
-
-  let newClose = lastPrice;
-
-  if (step < totalSteps * 0.2) {
-    newClose = lastPrice - getVolatility(lastPrice) * 1.5;
-  } else if (step < totalSteps * 0.35) {
-    newClose = lastPrice + (Math.random() - 0.5) * getVolatility(lastPrice) * 0.2;
-  } else if (step < totalSteps * 0.55) {
-    newClose = lastPrice + getVolatility(lastPrice) * 0.8;
-  } else if (step < totalSteps * 0.75) {
-    if (!currentPattern.firstBottomPrice) currentPattern.firstBottomPrice = sessionLow || lastPrice;
-    const target = currentPattern.firstBottomPrice;
-    newClose = lastPrice - (lastPrice - target) * 0.3 + (Math.random() - 0.5) * getVolatility(lastPrice) * 0.2;
-  } else {
-    newClose = lastPrice + getVolatility(lastPrice) * 1.2;
-  }
-
-  return Math.max(0.00001, newClose);
-}
-
-function generateHeadAndShouldersCandle() {
-  if (!currentPattern) return;
-
-  const lastPrice = data[data.length - 1].close;
-  const totalSteps = currentPattern.totalSteps;
-  const step = currentPattern.totalSteps - currentPattern.steps;
-
-  let newClose = lastPrice;
-
-  // ---- PHASES ----
-  if (step < totalSteps * 0.2) {
-    // Phase 1: Left Shoulder (up)
-    newClose = lastPrice + getVolatility(lastPrice) * 1.2;
-  } else if (step < totalSteps * 0.4) {
-    // Phase 2: Head (higher peak)
-    const leftShoulder = currentPattern.leftShoulderPrice || lastPrice;
-    if (!currentPattern.leftShoulderPrice) currentPattern.leftShoulderPrice = lastPrice;
-    const target = leftShoulder + getVolatility(lastPrice) * 1.5;
-    newClose = lastPrice + (target - lastPrice) * 0.5 + (Math.random() - 0.5) * getVolatility(lastPrice) * 0.2;
-    currentPattern.headPrice = target;
-  } else if (step < totalSteps * 0.6) {
-    // Phase 3: Pullback after Head
-    newClose = lastPrice - getVolatility(lastPrice) * 0.8;
-  } else if (step < totalSteps * 0.8) {
-    // Phase 4: Right Shoulder (near left shoulder)
-    const target = currentPattern.leftShoulderPrice;
-    newClose = lastPrice + (target - lastPrice) * 0.4 + (Math.random() - 0.5) * getVolatility(lastPrice) * 0.2;
-  } else {
-    // Phase 5: Breakdown
-    newClose = lastPrice - getVolatility(lastPrice) * 1.2;
-  }
-
-  return Math.max(0.00001, newClose);
-}
-
-function generateTriangleCandle() {
-  if (!currentPattern.triangleType) {
-    const types = ["sym", "asc", "desc"];
-    currentPattern.triangleType = types[Math.floor(Math.random() * types.length)];
-    console.log("Triangle type:", currentPattern.triangleType);
-  }
-
-  const lastPrice = data[data.length - 1].close;
-  const progress = 1 - (currentPattern.steps / currentPattern.totalSteps); // 0 → 1
-
-  const startRange = getVolatility(lastPrice) * 30;
-  const endRange = getVolatility(lastPrice) * 5;
-  const currentRange = startRange - progress * (startRange - endRange);
-
-  let upper, lower;
-
-  switch (currentPattern.triangleType) {
-    case "sym": // symmetrical
-      upper = lastPrice + (startRange / 2) * (1 - progress);
-      lower = lastPrice - (startRange / 2) * (1 - progress);
-      break;
-
-    case "asc": // ascending triangle (flat top, rising bottom)
-      upper = lastPrice + startRange * 0.5; // resistance line fixed
-      lower = lastPrice - startRange * 0.5 * (1 - progress); // bottom rising
-      break;
-
-    case "desc": // descending triangle (flat bottom, falling top)
-      upper = lastPrice + startRange * 0.5 * (1 - progress); // top falling
-      lower = lastPrice - startRange * 0.5; // support fixed
-      break;
-  }
-
-  // Midline moves inside the range
-  const midline = (upper + lower) / 2;
-  const newClose = midline + (Math.random() - 0.5) * (upper - lower);
-
-  return Math.max(0.00001, newClose);
-}
-
-// ---- Flag Pattern ----
-function generateFlagCandle() {
-  if (!currentPattern) return;
-
-  const lastPrice = data[data.length - 1].close;
-  const totalSteps = currentPattern.totalSteps;
-  const step = currentPattern.totalSteps - currentPattern.steps;
-
-  let newClose = lastPrice;
-
-  // Decide flagpole direction once at start
-  if (currentPattern.direction === undefined) {
-    currentPattern.direction = Math.random() < 0.5 ? "up" : "down";
-  }
-  const dir = currentPattern.direction;
-
-  // --- PHASES ---
-  if (step < totalSteps * 0.2) {
-    // Phase 1: Flagpole (sharp move)
-    newClose = dir === "up" ? lastPrice + getVolatility(lastPrice) * 2 : lastPrice - getVolatility(lastPrice) * 2;
-  } else if (step < totalSteps * 0.8) {
-    // Phase 2: Flag consolidation (small counter-trend)
-    const flagMove = getVolatility(lastPrice) * 0.3;
-    newClose = dir === "up" 
-      ? lastPrice - Math.random() * flagMove 
-      : lastPrice + Math.random() * flagMove;
-  } else {
-    // Phase 3: Breakout continuation
-    newClose = dir === "up" ? lastPrice + getVolatility(lastPrice) * 1.5 : lastPrice - getVolatility(lastPrice) * 1.5;
-  }
-
-  return Math.max(0.00001, newClose);
-}
-
-// ---- Wedge Pattern ----
-function generateWedgeCandle() {
-  if (!currentPattern) return;
-
-  const lastPrice = data[data.length - 1].close;
-  const totalSteps = currentPattern.totalSteps;
-  const step = currentPattern.totalSteps - currentPattern.steps;
-
-  // Decide wedge direction once at start
-  if (currentPattern.direction === undefined) {
-    currentPattern.direction = Math.random() < 0.5 ? "rising" : "falling";
-    currentPattern.startVol = getVolatility(lastPrice) * 1.5; // initial volatility
-  }
-
-  const dir = currentPattern.direction;
-  const progress = step / totalSteps;
-  const maxVol = currentPattern.startVol;
-  const wedgeVol = maxVol * (1 - progress); // gradually decreasing volatility
-
-  let newClose = lastPrice;
-
-  if (dir === "rising") {
-    // Rising wedge: uptrend narrowing
-    newClose = lastPrice + wedgeVol * 0.7 - Math.random() * wedgeVol * 0.3;
-  } else {
-    // Falling wedge: downtrend narrowing
-    newClose = lastPrice - wedgeVol * 0.7 + Math.random() * wedgeVol * 0.3;
-  }
-
-  return Math.max(0.00001, newClose);
-}
+function generateDoubleTopCandle(){return patternTarget('doubleTop');}
+function generateDoubleBottomCandle(){return patternTarget('doubleBottom');}
+function generateHeadAndShouldersCandle(){return patternTarget('headShoulders');}
+function generateTriangleCandle(){return patternTarget('triangle');}
+function generateFlagCandle(){return patternTarget('flag');}
+function generateWedgeCandle(){return patternTarget('wedge');}
