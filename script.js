@@ -30,16 +30,14 @@ let TICKS_PER_CANDLE = CANDLE_INTERVAL_MS / TICK_INTERVAL_MS;
 function nextTickDuration() {
     if (!DYNAMIC_TICKS) return TICK_INTERVAL_MS;
     const now = Math.round(marketSeconds * 1000);
-    const age = activeNews ? now - Math.round(activeNews.startTime * 1000) : Infinity;
-    let duration = activeNews ? (age < 30000 ? 25 : age < 60000 ? 50 : 100) : 200;
+    let duration = activeNews ? 100 : 200;
     // Land on candle and event boundaries even for a mid-candle hot release.
     const boundaries = [now + CANDLE_INTERVAL_MS - now % CANDLE_INTERVAL_MS];
     if (newsContinuation) boundaries.push(now + newsContinuation.legRemaining * TICK_INTERVAL_MS);
     const discovery = activeNews?.reaction?.discovery;
     if (discovery?.remaining > 0) boundaries.push(now + discovery.remaining * TICK_INTERVAL_MS);
     if (activeNews) {
-        boundaries.push(activeNews.startTime * 1000 + 30000,
-            activeNews.startTime * 1000 + 60000, activeNews.endTime * 1000);
+        boundaries.push(activeNews.endTime * 1000);
     } else {
         if (NEWS_CONFIG.fixed.enabled) boundaries.push(...Object.values(nextFixedNewsTimes).map(t => t * 1000));
         if (NEWS_CONFIG.hot.enabled) boundaries.push(nextHotNewsTime * 1000);
@@ -707,7 +705,7 @@ function startTickEngine() {
 
     tickInterval = setInterval(
         syncMarketClock,
-        DYNAMIC_TICKS ? 25 : TICK_INTERVAL_MS
+        DYNAMIC_TICKS ? 100 : TICK_INTERVAL_MS
     );
 }
 
