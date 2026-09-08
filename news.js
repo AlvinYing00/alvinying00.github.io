@@ -126,9 +126,9 @@ const NEWS_CONFIG = {
     // Release shock, partial recovery, then noisy price discovery.
     // Fractions are relative to the release price or initial shock.
     reaction: {
-        continuationChance: 0.75, // High/Extreme follow-through probability.
+        continuationChance: 0.6, // High/Extreme follow-through probability.
         continuationReversalChance: 0.6, // Independent countertrend detour within eligible follow-through.
-        falseBreakoutChance: 0.6, // Eligible breakouts that fail and finish against the breakout.
+        falseBreakoutChance: 0.5, // Eligible breakouts that fail and finish against the breakout.
         sustainedReversalChance: 0.5,
         extremeStrengthChance: 0.9,
         extremeStrengthContinuationChance: 0.9,
