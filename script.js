@@ -39,8 +39,10 @@ const STRUCTURE_CONFIG = { minCooldown: 20, maxCooldown: 40, lookback: 12,
 let quietSetup = null;
 let quietPath = null;
 let quietCooldown = STRUCTURE_CONFIG.minCooldown;
+let quietMomentum = null;
 
 function resetQuietMarket() {
+    quietMomentum = null;
     quietSetup = null;
     quietPath = null;
     quietCooldown = STRUCTURE_CONFIG.minCooldown;
@@ -72,11 +74,13 @@ function buildQuietPath(defaultClose) {
     }
     const close = Math.max(open * 0.975, Math.min(open * 1.025, defaultClose));
     const body = Math.abs(close - open);
-    const wick = open * (0.006 + Math.random() * 0.006) + body * (0.15 + Math.random() * 0.35);
+    const decisive = body > open * 0.006 && Math.random() < 0.75;
+    const wick = decisive ? open*(0.0008+Math.random()*0.0015)+body*0.08 :
+        open*(0.002+Math.random()*0.003)+body*0.15;
     let high = Math.max(open, close) + wick * (0.6 + Math.random());
     let low = Math.max(open * 0.5, Math.min(open, close) - wick * (0.6 + Math.random()));
     // Visit both extremes through actual ticks, with randomized turning times.
-    const lowFirst = Math.random() < 0.5;
+    const lowFirst = decisive ? close > open : Math.random() < 0.5;
     quietPath = { points: [open, lowFirst ? low : high, lowFirst ? high : low, close],
         ticks: [0, 12 + Math.floor(Math.random() * 9), 36 + Math.floor(Math.random() * 9), 60] };
 }
@@ -135,7 +139,7 @@ function quietTickMove() {
     const segment = quietPath.ticks.findIndex(t => t >= tick);
     const remaining = quietPath.ticks[segment] - tick + 1;
     const target = quietPath.points[segment];
-    const noiseScale = Math.max(quietPath.points[0] * 0.008, Math.abs(target - currentTickPrice) / remaining * 4);
+    const noiseScale = Math.max(quietPath.points[0] * 0.004, Math.abs(target - currentTickPrice) / remaining * 3);
     const noise = remaining === 1 ? 0 : (Math.random() - 0.5) * noiseScale;
     const move = (target - currentTickPrice) / remaining + noise;
     return Math.max(-currentTickPrice*0.008, Math.min(currentTickPrice*0.008,move));
@@ -230,11 +234,11 @@ function scheduleNextPattern() {
   const patterns = ["doubleTop", "doubleBottom", "headShoulders", "triangle", "flag", "wedge"];
   const choice = patterns[Math.floor(Math.random() * patterns.length)];
   patternQueue.push(choice);
-  patternCooldown = 120;
+  patternCooldown = 0;
 }
 
 function startPattern(name) {
-  const steps = Math.floor(80 + Math.random() * 71); // 80–150 candles
+  const steps = 28 + Math.floor(Math.random() * 9); // 7–9 quiet minutes
   currentPattern = { name, steps, totalSteps: steps };
 }
 
@@ -269,7 +273,7 @@ function continuePattern() {
   if (currentPattern.steps <= 0) {
     console.log("Pattern finished:", currentPattern.name);
     currentPattern = null;
-    patternCooldown = 120;
+    patternCooldown = 24 + Math.floor(Math.random()*17);
   }
   return target;
 }
@@ -438,8 +442,9 @@ function triggerRetracement(prevPrice, movedPrice) {
 // Choose movement once per candle; only the tick engine writes chart data.
 function generateTickMove() {
     if (candleMove === null) {
+        const wasPattern = Boolean(currentPattern);
         const target = generatePatternCandle();
-        candleMove = (target - currentTickPrice) * TICK_PATH_CONFIG.movementMultiplier / TICKS_PER_CANDLE;
+        candleMove = (target - currentTickPrice) * (wasPattern || currentPattern ? 1 : TICK_PATH_CONFIG.movementMultiplier) / TICKS_PER_CANDLE;
     }
     return candleMove;
 }
@@ -504,6 +509,9 @@ function generateMarketTick() {
     const newsDriven = Boolean(activeNews || newsContinuation);
     if (newsDriven) {
         resetQuietMarket();
+        currentPattern = null;
+        patternQueue = [];
+        patternCooldown = 12;
         candleMove = null;
     }
     let move = 0;
@@ -705,15 +713,37 @@ function dump() { applyManualMove(-1); }
 
 function generatePatternCandle() {
   if (currentPattern) return continuePattern();
+  if (quietSetup) return currentTickPrice;
   if (patternCooldown > 0) {
     patternCooldown--;
-    return generateCandle();
+    return generateMomentumCandle();
   }
   if (patternQueue.length > 0) {
     startPattern(patternQueue.shift());
     return continuePattern();
   }
-  return generateCandle();
+  if (Math.random()<0.12) {
+    scheduleNextPattern();
+    startPattern(patternQueue.shift());
+    return continuePattern();
+  }
+  return generateMomentumCandle();
+}
+
+function generateMomentumCandle() {
+  const previous=data[data.length-1], price=currentTickPrice;
+  if (!quietMomentum || quietMomentum.remaining<=0) {
+    const recent=data[Math.max(0,data.length-5)];
+    const direction=Math.sign(previous.close-recent.close)||1;
+    quietMomentum={direction:Math.random()<0.65?direction:-direction,remaining:6+Math.floor(Math.random()*7)};
+  }
+  const m=quietMomentum;
+  m.remaining--;
+  const pullback=Math.random()<0.3;
+  let target=price+m.direction*(pullback?-1:1)*price*(pullback?0.003+Math.random()*0.006:0.007+Math.random()*0.009);
+  if (!pullback) target=m.direction>0 ? Math.max(target,Math.min(previous.high+price*.001,price*1.018)) :
+      Math.min(target,Math.max(previous.low-price*.001,price*.982));
+  return Math.max(0.00001,target);
 }
 
 // Start/Stop live market
