@@ -126,9 +126,9 @@ const NEWS_CONFIG = {
     // Release shock, partial recovery, then noisy price discovery.
     // Fractions are relative to the release price or initial shock.
     reaction: {
-        continuationChance: 0.6, // High/Extreme follow-through probability.
-        continuationReversalChance: 0.5, // Independent countertrend detour within eligible follow-through.
-        falseBreakoutChance: 0.5, // Eligible breakouts that fail and finish against the breakout.
+        continuationChance: 0.75, // High/Extreme follow-through probability.
+        continuationReversalChance: 0.5, // Mutually exclusive choice before a confirmed breakout.
+        falseBreakoutChance: 0.6, // Rolled once, only after a completed later candle breaks the first spike extreme.
         sustainedReversalChance: 0.5,
         extremeStrengthChance: 0.9,
         extremeStrengthContinuationChance: 0.9,
@@ -137,7 +137,7 @@ const NEWS_CONFIG = {
         extremeSecondSpikeDelaySeconds: 4, // Measured from the first spike.
         extremeSecondSpikeFraction: 0.5, // Half the first spike's absolute price change.
         // Each event can override these weights using its own impactChances.
-        impactChances: {medium: 0.35, high: 0.35, extreme: 0.30},
+        impactChances: {medium: 0.30, high: 0.35, extreme: 0.35},
         delaySeconds: 2, // News is visible immediately; price shock waits two seconds.
         panicMinTickFraction: 0.012, // Pre-spike moves: 1.2–3.5% of release price per tick.
         panicMaxTickFraction: 0.035,
@@ -265,7 +265,14 @@ function onNewsCandleClosed(candle, nowSeconds) {
     const ended = activeNews;
     if (!ended || !ended.reaction) return;
     const reaction = ended.reaction;
-    if (reaction.continuationDecided || !reaction.spikeTimes.includes(candle.time)) return;
+    if (candle.time === reaction.spikeTimes[0]) {
+        reaction.firstCandle = {time:candle.time, high:candle.high, low:candle.low};
+    }
+    if (reaction.continuationDecided) {
+        selectNewsOutcome(candle, nowSeconds);
+        return;
+    }
+    if (!reaction.spikeTimes.includes(candle.time)) return;
     if (ended.emotionalImpact === 'extreme' && !reaction.secondShockDone) return;
     reaction.continuationDecided = true;
     const cfg = NEWS_CONFIG.reaction;
@@ -283,7 +290,7 @@ function onNewsCandleClosed(candle, nowSeconds) {
         }
         return;
     }
-    const candles = data.filter(c => reaction.spikeTimes.includes(c.time));
+    const candles = [reaction.firstCandle || candle];
     const reference = ended.direction > 0 ? Math.max(...candles.map(c => c.high)) : Math.min(...candles.map(c => c.low));
     const startPrice = currentTickPrice;
     const margin = Math.max(Math.abs(reference) * 0.025, reaction.size * 0.1) * (strength ? cfg.extremeStrengthMultiplier : 1);
@@ -292,47 +299,64 @@ function onNewsCandleClosed(candle, nowSeconds) {
     // Finish before the active countdown ends, rather than starting at expiration.
     const ticks = Math.floor((ended.endTime-nowSeconds-TICK_SECONDS)/TICK_SECONDS + 1e-8);
     if (ticks < 1) return;
-    // Separate draw from breakout eligibility: half of continuations take a
-    // false-start / countertrend detour before returning to the breakout zone.
-    const reversal = !strength && Math.random() < cfg.continuationReversalChance;
-    const falseBreakout = !strength && ticks >= legacyTicks(24) && Math.random() < cfg.falseBreakoutChance;
-    const sustainedReversal = reversal && !falseBreakout && Math.random() < cfg.sustainedReversalChance;
-    const oppositeExtreme = ended.direction > 0 ? Math.min(...candles.map(c => c.low)) : Math.max(...candles.map(c => c.high));
-    const legs = [];
-    if (falseBreakout) {
-        const breakoutTicks = Math.max(1, Math.floor(ticks * randomBetween(0.08, 0.72)));
-        const failureDepth = Math.max(reaction.size * randomBetween(0.25, 0.55), margin * 2);
-        // Cross the actual spike extreme first, then finish inside that extreme
-        // and beyond the starting price in the opposite direction.
-        target = Math.max(0.00001, ended.direction > 0
-            ? Math.min(reference, startPrice) - failureDepth
-            : Math.max(reference, startPrice) + failureDepth);
-        legs.push({target:breakoutTarget,ticks:breakoutTicks});
-        // A failed push can reclaim the extreme again before the final failure.
-        // Unequal tick durations never align this sequence to numbered candles.
-        const available = ticks - breakoutTicks;
-        const weights = [Math.random()+0.3,Math.random()+0.3,Math.random()+0.3];
-        const totalWeight = weights.reduce((a,b)=>a+b,0)+1;
-        const durations = weights.map(w=>Math.max(1,Math.floor(available*w/totalWeight)));
-        const renewedBreak = breakoutTarget + ended.direction * margin * randomBetween(0.2,1.2);
-        legs.push({target:reference-ended.direction*margin*randomBetween(0.1,0.7),ticks:durations[0]},
-            {target:renewedBreak,ticks:durations[1]},
-            {target:target+(renewedBreak-target)*randomBetween(0.2,0.6),ticks:durations[2]},
-            {target,ticks:available-durations.reduce((a,b)=>a+b,0)});
-    } else if (reversal && ticks >= legacyTicks(12)) {
-        const firstTicks = Math.max(1, Math.floor(ticks * randomBetween(0.18, 0.30)));
-        const reverseTicks = Math.max(1, Math.floor(ticks * randomBetween(0.25, 0.38)));
-        const firstTarget = startPrice + (target - startPrice) * randomBetween(0.3, 0.65);
-        const reverseSize = Math.max(reaction.size * randomBetween(0.25, 0.55), startPrice * 0.035);
-        legs.push({target:firstTarget,ticks:firstTicks},
-            {target:Math.max(0.00001, startPrice-ended.direction*reverseSize),ticks:reverseTicks});
-        if (sustainedReversal) target = Math.max(0.00001, oppositeExtreme-ended.direction*margin);
-        legs.push({target,ticks:ticks-firstTicks-reverseTicks});
-    } else legs.push({target,ticks});
+    // Begin a developing path; special outcomes require a later closed candle.
+    const oppositeExtreme = ended.direction > 0 ? candles[0].low : candles[0].high;
+    const legs = [{target,ticks}];
     newsContinuation = {direction:ended.direction,reference,target,startPrice,startTime:nowSeconds,
-        remainingTicks:ticks,totalTicks:ticks,excursion:0,reversal:reversal && !falseBreakout,
-        falseBreakout,sustainedReversal,strength,oppositeExtreme,breakoutTarget,
-        noiseAmplitude:newsNoiseAmplitude(reaction),legs,legIndex:0,legRemaining:legs[0].ticks};
+        remainingTicks:ticks,totalTicks:ticks,excursion:0,reversal:false,
+        falseBreakout:false,sustainedReversal:false,strength,oppositeExtreme,breakoutTarget,
+        noiseAmplitude:newsNoiseAmplitude(reaction),legs,legIndex:0,legRemaining:ticks};
+}
+
+// Decide once using actual completed follow-up OHLC, never a planned target.
+function selectNewsOutcome(candle, nowSeconds) {
+    const event = activeNews, r = event?.reaction, cfg = NEWS_CONFIG.reaction;
+    if (!r?.firstCandle || r.outcomeDecided || r.strengthMode ||
+        candle.time <= r.firstCandle.time || r.spikeTimes.includes(candle.time)) return;
+    const ticks = Math.floor((event.endTime-nowSeconds-TICK_SECONDS)/TICK_SECONDS + 1e-8);
+    if (ticks < 3) return;
+    const d = event.direction;
+    const reference = d > 0 ? r.firstCandle.high : r.firstCandle.low;
+    const oppositeExtreme = d > 0 ? r.firstCandle.low : r.firstCandle.high;
+    const broke = d > 0 ? candle.high > reference : candle.low < reference;
+    r.followingBroke = Boolean(r.followingBroke || broke);
+    let outcome = 'none';
+    if (r.followingBroke) {
+        if (Math.random() < cfg.falseBreakoutChance) outcome = 'falseBreakout';
+    } else {
+        const total = cfg.continuationReversalChance + cfg.sustainedReversalChance;
+        if (total > 0) outcome = Math.random() * total < cfg.continuationReversalChance
+            ? 'continuationReversal' : 'sustainedReversal';
+    }
+    r.outcomeDecided = true;
+    r.outcome = outcome;
+    r.outcomeTime = nowSeconds;
+    r.outcomeTriggerCount = outcome === 'none' ? 0 : 1;
+    if (outcome === 'none') return;
+    const startPrice = currentTickPrice;
+    const margin = Math.max(Math.abs(reference)*.025,r.size*.1);
+    const breakoutTarget = Math.max(.00001,reference+d*margin);
+    const reverseSize = Math.max(r.size*randomBetween(.25,.55),startPrice*.035);
+    let target;
+    const legs=[];
+    if (outcome === 'continuationReversal') {
+        const pullbackTicks = Math.max(1,Math.floor(ticks*randomBetween(.25,.55)));
+        target = breakoutTarget;
+        legs.push({target:Math.max(.00001,startPrice-d*reverseSize),ticks:pullbackTicks},
+            {target,ticks:ticks-pullbackTicks});
+    } else {
+        target = Math.max(.00001,outcome === 'sustainedReversal'
+            ? oppositeExtreme-d*margin
+            : (d>0?Math.min(reference,startPrice):Math.max(reference,startPrice))-d*reverseSize);
+        // An irregular multi-wave path can retest the broken level before failing.
+        legs.push({target,ticks});
+    }
+    r.discovery = null;
+    newsContinuation = {direction:d,reference,oppositeExtreme,breakoutTarget,target,startPrice,startTime:nowSeconds,
+        remainingTicks:ticks,totalTicks:ticks,excursion:0,
+        reversal:outcome==='continuationReversal',falseBreakout:outcome==='falseBreakout',
+        sustainedReversal:outcome==='sustainedReversal',strength:false,
+        noiseAmplitude:newsNoiseAmplitude(r),legs,legIndex:0,legRemaining:legs[0].ticks};
 }
 
 function newsNoiseAmplitude(reaction) {
