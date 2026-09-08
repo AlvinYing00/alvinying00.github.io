@@ -152,10 +152,11 @@ const NEWS_CONFIG = {
         pullbackFraction: 0.45, // recover part of the initial spike
         mediumPullbackMin: 0.45,
         mediumPullbackMax: 0.75,
+        mediumFollowThroughMin: 0.65, // Travel after recovery, relative to the original spike.
+        mediumFollowThroughMax: 1.15,
         finalRetentionFraction: 0.75, // directional bias after recovery
         reversionPerTick: 0.12,
-        noiseFraction: 0.09, // two-sided noise relative to initial shock
-        finalNoiseMultiplier: 0.35
+        noiseFraction: 0.09 // Constant two-sided tick volatility throughout active news.
     }
 };
 
@@ -321,7 +322,13 @@ function onNewsCandleClosed(candle, nowSeconds) {
     } else legs.push({target,ticks});
     newsContinuation = {direction:ended.direction,reference,target,startPrice,startTime:nowSeconds,
         remainingTicks:ticks,totalTicks:ticks,excursion:0,reversal:reversal && !falseBreakout,
-        falseBreakout,sustainedReversal,strength,oppositeExtreme,breakoutTarget,legs,legIndex:0,legRemaining:legs[0].ticks};
+        falseBreakout,sustainedReversal,strength,oppositeExtreme,breakoutTarget,
+        noiseAmplitude:newsNoiseAmplitude(reaction),legs,legIndex:0,legRemaining:legs[0].ticks};
+}
+
+function newsNoiseAmplitude(reaction) {
+    return reaction.size * NEWS_CONFIG.reaction.noiseFraction *
+        (reaction.strengthMode ? NEWS_CONFIG.reaction.extremeStrengthMultiplier : 1);
 }
 
 function anticipationMove(nowSeconds, price) {
@@ -480,9 +487,8 @@ function applyNewsToPriceMove(baseMove, nowSeconds, price) {
             const guideBefore=continuationGuide(leg,follow.startPrice,elapsed);
             const guideAfter=continuationGuide(leg,follow.startPrice,elapsed+1);
             // Noisy bridge: alternating excursions, with an exact final breakout.
-            const amplitude = Math.max(Math.abs(leg.target - follow.startPrice), follow.startPrice * 0.04);
             const nextExcursion = remaining <= 1 ? 0 : follow.excursion * (remaining - 1) / remaining +
-                randomBetween(-1, 1) * amplitude * 0.055 * (follow.strength ? NEWS_CONFIG.reaction.extremeStrengthMultiplier : 1) * Math.sqrt((remaining - 1) / remaining);
+                randomBetween(-1, 1) * follow.noiseAmplitude * Math.sqrt((remaining - 1) / remaining);
             // Correct any manual price offset gradually, never flatten the
             // unequal candle pushes into one constant-speed reversal.
             const move = guideAfter-guideBefore +
@@ -558,17 +564,39 @@ function applyNewsToPriceMove(baseMove, nowSeconds, price) {
         const target = reaction.anchor + activeNews.direction * reaction.size * (1 - reaction.mediumPullbackFraction);
         if (elapsed <= reaction.recoverySeconds) {
             const ticksLeft = Math.max(1, Math.ceil((reaction.recoverySeconds - elapsed) / 0.25) + 1);
-            const noise = ticksLeft <= 1 ? 0 : randomBetween(-1, 1) * reaction.size * 0.045 * Math.sqrt((ticksLeft - 1) / ticksLeft);
+            const noise = ticksLeft <= 1 ? 0 : randomBetween(-1, 1) * newsNoiseAmplitude(reaction) * Math.sqrt((ticksLeft - 1) / ticksLeft);
             return (target - price) / ticksLeft + noise;
         }
-        return (target - price) * 0.12 + randomBetween(-1, 1) * reaction.size * 0.025;
+        if (!reaction.mediumTrend) {
+            const ticks = Math.max(1,Math.floor((activeNews.endTime-nowSeconds)/0.25));
+            const distance = reaction.size*randomBetween(cfg.mediumFollowThroughMin,cfg.mediumFollowThroughMax);
+            reaction.mediumTrend = {startPrice:price,
+                target:Math.max(reaction.anchor*0.1,target+activeNews.direction*distance),
+                ticks,remaining:ticks,excursion:0};
+        }
+        const trend = reaction.mediumTrend;
+        const remaining = trend.remaining;
+        if (remaining<=0) return baseMove;
+        const elapsedTicks=trend.ticks-remaining;
+        const before=continuationGuide(trend,trend.startPrice,elapsedTicks);
+        const after=continuationGuide(trend,trend.startPrice,elapsedTicks+1);
+        // Keep the post-pullback destination moving through the news period.
+        // Unequal pushes/counter-candles share the normal candle clock, with
+        // the same tick-noise amplitude used by all other active-news paths.
+        const bridgeTicks=Math.min(remaining,TICKS_PER_CANDLE-candleTickCount);
+        const excursion=bridgeTicks<=1 ? 0 : trend.excursion*(bridgeTicks-1)/bridgeTicks+
+            randomBetween(-1,1)*newsNoiseAmplitude(reaction)*Math.sqrt((bridgeTicks-1)/bridgeTicks);
+        const move=after-before+(before+trend.excursion-price)/remaining+excursion-trend.excursion;
+        trend.excursion=excursion;
+        trend.remaining--;
+        return move;
     }
 
     const {anchor, size} = activeNews.reaction;
     if (reaction.strengthMode) {
         const elapsed = nowSeconds-reaction.strengthStart;
         const target = reaction.strengthAnchor+activeNews.direction*size*0.4*Math.min(1,elapsed/30);
-        return (target-price)*0.08 + randomBetween(-1,1)*size*cfg.noiseFraction*cfg.extremeStrengthMultiplier;
+        return (target-price)*0.08 + randomBetween(-1,1)*newsNoiseAmplitude(reaction);
     }
     const progress = Math.min(1, (nowSeconds - reactionTime) /
         Math.max(0.25, activeNews.endTime - reactionTime));
@@ -579,8 +607,7 @@ function applyNewsToPriceMove(baseMove, nowSeconds, price) {
             (cfg.finalRetentionFraction - (1 - cfg.pullbackFraction)) *
             (progress - recoveryEnd) / (1 - recoveryEnd);
     const target = anchor + activeNews.direction * size * retained;
-    const noiseScale = 1 - progress * (1 - cfg.finalNoiseMultiplier);
-    const noise = randomBetween(-1, 1) * size * cfg.noiseFraction * noiseScale;
+    const noise = randomBetween(-1, 1) * newsNoiseAmplitude(reaction);
     // Pull toward a changing reference price, not a fixed one-way tick drift.
     return (target - price) * cfg.reversionPerTick + noise;
 }
