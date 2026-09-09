@@ -294,7 +294,7 @@ function onNewsCandleClosed(candle, nowSeconds) {
     const reference = ended.direction > 0 ? Math.max(...candles.map(c => c.high)) : Math.min(...candles.map(c => c.low));
     const startPrice = currentTickPrice;
     const margin = Math.max(Math.abs(reference) * 0.025, reaction.size * 0.1) * (strength ? cfg.extremeStrengthMultiplier : 1);
-    const breakoutTarget = ended.direction > 0 ? Math.max(reference,startPrice)+margin : Math.max(0.00001,Math.min(reference,startPrice)-margin);
+    const breakoutTarget = ended.direction > 0 ? Math.max(reference,startPrice)+margin : Math.max(0.01,Math.min(reference,startPrice)-margin);
     let target = breakoutTarget;
     // Finish before the active countdown ends, rather than starting at expiration.
     const ticks = Math.floor((ended.endTime-nowSeconds-TICK_SECONDS)/TICK_SECONDS + 1e-8);
