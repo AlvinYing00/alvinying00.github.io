@@ -385,7 +385,12 @@ function momentumExcursion(previous, remaining, amplitude, guideMove, price) {
     // Persistent intrabar noise crosses candle boundaries. Only the event leg's
     // final few ticks settle toward its outcome; a candle close never resets it.
     const settling=Math.min(1,(remaining-1)/legacyTicks(16));
-    return (previous*Math.pow(0.9,TICK_TIME_SCALE)+randomBetween(-1,1)*amplitude*0.65*Math.sqrt((1-Math.pow(0.81,TICK_TIME_SCALE))/(1-0.81)))*settling;
+    // Size intratick fluctuations against the local move, not the release shock.
+    // Keep opposing ticks, but prevent spike-sized noise from drowning the trend.
+    const localCandleMove = Math.abs(guideMove) * CANDLE_INTERVAL_MS / TICK_INTERVAL_MS;
+    const localAmplitude = Math.min(amplitude, Math.max(price * 0.0006,
+        Math.min(price * 0.003, localCandleMove * 0.22)));
+    return (previous*Math.pow(0.9,TICK_TIME_SCALE)+randomBetween(-1,1)*localAmplitude*0.65*Math.sqrt((1-Math.pow(0.81,TICK_TIME_SCALE))/(1-0.81)))*settling;
 }
 
 function anticipationMove(nowSeconds, price) {
@@ -408,10 +413,10 @@ function anticipationMove(nowSeconds, price) {
 
 function continuationGuide(leg, startPrice, tick) {
     if (!leg.path) {
-        // Irregular 2–20 second waves, unrelated to 15-second candle boundaries.
+        // Irregular 15–45 second pushes/pullbacks can span candle boundaries.
         leg.turns=[0];
-        while(leg.ticks-leg.turns.at(-1)>legacyTicks(85)) {
-            leg.turns.push(leg.turns.at(-1)+legacyTicks(Math.floor(randomBetween(9,80))));
+        while(leg.ticks-leg.turns.at(-1)>legacyTicks(240)) {
+            leg.turns.push(leg.turns.at(-1)+legacyTicks(Math.floor(randomBetween(60,180))));
         }
         leg.turns.push(leg.ticks);
         const count=leg.turns.length-1;
@@ -437,7 +442,8 @@ function continuationGuide(leg, startPrice, tick) {
     }
     const index=Math.max(0,Math.min(leg.path.length-2,leg.turns.findIndex(t=>t>=tick)-1));
     const progress=Math.max(0,Math.min(1,(tick-leg.turns[index])/(leg.turns[index+1]-leg.turns[index])));
-    const eased=progress*progress*(3-2*progress);
+    // Retain speed through wave transitions instead of pausing at every turn.
+    const eased=0.65*progress+0.35*progress*progress*(3-2*progress);
     return leg.path[index]+(leg.path[index+1]-leg.path[index])*eased;
 }
 
