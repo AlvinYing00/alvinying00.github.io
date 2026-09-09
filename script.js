@@ -169,8 +169,29 @@ function setQuietEngine(value) {
 
 // Shared preload/live price process: small multiplicative random ticks with
 // drift, not a route through prescribed candle opens, extremes and closes.
-function sampleMarketMove(price, drift, volatility = 1) {
-    return price * Math.expm1(drift * TICK_TIME_SCALE + (Math.random() - 0.5) * 0.006 * volatility * TICK_NOISE_SCALE);
+const QUIET_VOLATILITY_CONFIG = {
+    newsRangeRatio: 0.75,
+    defaultNewsRange: 0.08,
+    minMultiplier: 2,
+    maxMultiplier: 5
+};
+let recentNewsRanges = [];
+let quietMovementMultiplier = 2.8;
+
+function updateQuietVolatility() {
+    const sorted = [...recentNewsRanges].sort((a,b)=>a-b);
+    const reference = sorted.length ? sorted[Math.floor(sorted.length/2)] : QUIET_VOLATILITY_CONFIG.defaultNewsRange;
+    // Approximate expected 15s range of the original uniform-noise random walk.
+    const baselineRange = .006 / Math.sqrt(12) * Math.sqrt(15000/250) * 1.6;
+    quietMovementMultiplier = Math.max(QUIET_VOLATILITY_CONFIG.minMultiplier,
+        Math.min(QUIET_VOLATILITY_CONFIG.maxMultiplier, reference * QUIET_VOLATILITY_CONFIG.newsRangeRatio / baselineRange));
+}
+
+function sampleMarketMove(price, drift, volatility = 1, preload = false) {
+    const scale = preload ? 1 : quietMovementMultiplier;
+    // A smaller drift boost preserves direction alongside the larger fluctuations.
+    return price * Math.expm1(drift * Math.sqrt(scale) * TICK_TIME_SCALE +
+        (Math.random() - 0.5) * 0.006 * scale * volatility * TICK_NOISE_SCALE);
 }
 
 function resetQuietMarket() {
@@ -442,7 +463,7 @@ function initChart(priceMin = 9, priceMax = 10) {
     const candle = {time: (time += CANDLE_INTERVAL_MS / 1000), open: price, high: price, low: price, close: price};
     const drift = (Math.random() - 0.5) * 0.0008;
     for (let tick = 0; tick < TICKS_PER_CANDLE; tick++) {
-      price += sampleMarketMove(price,drift);
+      price += sampleMarketMove(price,drift,1,true);
       candle.high = Math.max(candle.high, price);
       candle.low = Math.min(candle.low, price);
     }
@@ -641,6 +662,7 @@ function generateMarketTick() {
         candleMove = null;
     }
     let move = 0;
+    if (!newsDriven && !anticipationPeriod && candleTickCount === 0) updateQuietVolatility();
     if (!newsDriven && !anticipationPeriod && PRICE_ACTION_CONFIG.enabled) {
         move=priceActionTickMove();
     } else if (!newsDriven && !anticipationPeriod) {
@@ -685,6 +707,12 @@ function generateMarketTick() {
         if (!batchingTicks) candleSeries.update(currentCandle);
 
         updateMovingAveragesIncremental();
+        const reaction = activeNews?.reaction;
+        if (reaction?.firstCandle && currentCandle.time > reaction.firstCandle.time &&
+            !reaction.spikeTimes.includes(currentCandle.time)) {
+            recentNewsRanges.push((currentCandle.high-currentCandle.low)/currentCandle.open);
+            recentNewsRanges = recentNewsRanges.slice(-12);
+        }
         onNewsCandleClosed(currentCandle, marketSeconds);
 
         // Start the next candle on the next tick (or manual price move).
@@ -1014,6 +1042,8 @@ function applyVolatility(level) {
     currentTickPrice = null;
     currentCandle = null;
     marketSeconds = 0;
+    recentNewsRanges = [];
+    updateQuietVolatility();
     if (marketInterval) lastTickWallTime = Date.now();
     resetNews(marketSeconds);
     resetQuietMarket();
