@@ -430,8 +430,39 @@ function newsSweepOffset(state, remaining, price, previous, guideMove) {
     return sweep.peak*weight*Math.min(1,Math.max(0,remaining-1)*TICK_SECONDS/2);
 }
 
+// Strong directional legs need meaningful counter-moves, even when ordinary
+// tick noise hits its price cap. These temporary offsets are visited by live ticks.
+function newsCandlePullback(state, remaining, price) {
+    if (!state) return 0;
+    const barTime=currentCandle?currentCandle.time:time+CANDLE_INTERVAL_MS/1000;
+    const elapsedMs=Math.round(marketSeconds*1000)%CANDLE_INTERVAL_MS;
+    const progress=elapsedMs===0?1:elapsedMs/CANDLE_INTERVAL_MS;
+    if (state.pullbackProfile?.time!==barTime) {
+        const leg=state.legs?state.legs[state.legIndex]:state;
+        const elapsed=leg.ticks-(state.legRemaining??state.remaining);
+        const barTicks=(1-progress)*CANDLE_INTERVAL_MS/TICK_INTERVAL_MS;
+        const before=continuationGuide(leg,state.startPrice,Math.max(0,elapsed));
+        const end=continuationGuide(leg,state.startPrice,Math.min(leg.ticks,elapsed+barTicks));
+        const move=end-before;
+        state.pullbackProfile={time:barTime,start:progress,move,
+            early:randomBetween(.12,.24),late:randomBetween(.72,.87),
+            tail:randomBetween(.10,.24),wick:randomBetween(.10,.24),
+            enabled:Math.abs(move)>price*.006 && progress<.35};
+    }
+    const p=state.pullbackProfile;
+    if (!p.enabled || progress>=1) return 0;
+    const t=Math.max(0,Math.min(1,(progress-p.start)/(1-p.start)));
+    const smooth=x=>x*x*(3-2*x);
+    // Different peak times and depths prevent a repeated candle template.
+    const knots=[0,p.early,.48,p.late,1];
+    const offsets=[0,-p.move*(p.early+p.tail),0,p.move*(1-p.late+p.wick),0];
+    let i=0;while(i<3&&t>knots[i+1])i++;
+    const u=smooth(Math.max(0,Math.min(1,(t-knots[i])/(knots[i+1]-knots[i]))));
+    return (offsets[i]+(offsets[i+1]-offsets[i])*u)*Math.min(1,Math.max(0,remaining-1)*TICK_SECONDS/2);
+}
+
 function momentumExcursion(previous, remaining, amplitude, guideMove, price, state) {
-    if (remaining<=1) { if(state)state.sweepOffset=0; return 0; }
+    if (remaining<=1) { if(state){state.sweepOffset=0;state.pullbackOffset=0;} return 0; }
     // Persistent intrabar noise crosses candle boundaries. Only the event leg's
     // final few ticks settle toward its outcome; a candle close never resets it.
     const settling=Math.min(1,(remaining-1)/legacyTicks(16));
@@ -454,8 +485,10 @@ function momentumExcursion(previous, remaining, amplitude, guideMove, price, sta
     const noiseScale = Math.sqrt((1-Math.pow(persistence*persistence,TICK_TIME_SCALE))/(1-persistence*persistence));
     const oldSweep=state?.sweepOffset||0;
     const offset=newsSweepOffset(state,remaining,price,previous,guideMove);
-    if(state)state.sweepOffset=offset;
-    return ((previous-oldSweep)*Math.pow(persistence,TICK_TIME_SCALE)+randomBetween(-1,1)*localAmplitude*0.65*noiseScale)*settling+offset;
+    const oldPullback=state?.pullbackOffset||0;
+    const pullback=newsCandlePullback(state,remaining,price);
+    if(state){state.sweepOffset=offset;state.pullbackOffset=pullback;}
+    return ((previous-oldSweep-oldPullback)*Math.pow(persistence,TICK_TIME_SCALE)+randomBetween(-1,1)*localAmplitude*0.65*noiseScale)*settling+offset+pullback;
 }
 
 function anticipationMove(nowSeconds, price) {
