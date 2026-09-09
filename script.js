@@ -68,7 +68,7 @@ let tickInterval = null;
 let lastTickWallTime = null;
 let catchUpTimer = null;
 let batchingTicks = false;
-const PRELOAD_CANDLES = 250;
+const PRELOAD_CANDLES = 500;
 let candleTickCount = 0;
 let currentTickPrice = null;
 let currentCandle = null;
@@ -187,8 +187,8 @@ function updateQuietVolatility() {
         Math.min(QUIET_VOLATILITY_CONFIG.maxMultiplier, reference * QUIET_VOLATILITY_CONFIG.newsRangeRatio / baselineRange));
 }
 
-function sampleMarketMove(price, drift, volatility = 1, preload = false) {
-    const scale = preload ? 1 : quietMovementMultiplier;
+function sampleMarketMove(price, drift, volatility = 1) {
+    const scale = quietMovementMultiplier;
     // A smaller drift boost preserves direction alongside the larger fluctuations.
     return price * Math.expm1(drift * Math.sqrt(scale) * TICK_TIME_SCALE +
         (Math.random() - 0.5) * 0.006 * scale * volatility * TICK_NOISE_SCALE);
@@ -463,36 +463,18 @@ function initChart(priceMin = 9, priceMax = 10) {
     const candle = {time: (time += CANDLE_INTERVAL_MS / 1000), open: price, high: price, low: price, close: price};
     const drift = (Math.random() - 0.5) * 0.0008;
     for (let tick = 0; tick < TICKS_PER_CANDLE; tick++) {
-      price += sampleMarketMove(price,drift,1,true);
+      price = Math.max(0.01, price + sampleMarketMove(price,drift));
       candle.high = Math.max(candle.high, price);
       candle.low = Math.min(candle.low, price);
     }
     candle.close = price;
-    // Give synthetic history readable, asymmetric wicks without oversized tails.
-    // This only shapes preloaded OHLC; live candles still use actual tick extremes.
-    const body = Math.abs(candle.close - candle.open);
-    const bodyHigh = Math.max(candle.open, candle.close);
-    const bodyLow = Math.min(candle.open, candle.close);
-    const wickLimit = candle.open * 0.012;
-    const historyWick = () => Math.min(wickLimit,
-      body * (0.25 + Math.random() * 0.35) + candle.open * (0.0015 + Math.random() * 0.0015));
-    candle.high = bodyHigh + Math.min(wickLimit, Math.max(candle.high - bodyHigh, historyWick()));
-    candle.low = Math.max(0.01, bodyLow - Math.min(wickLimit, Math.max(bodyLow - candle.low, historyWick())));
-    // Occasional one-sided rejection candles: extend only the wick OR tail.
-    if (Math.random() < 0.25) {
-      const extension = 2 + Math.random();
-      if (Math.random() < 0.5) {
-        candle.high = bodyHigh + (candle.high - bodyHigh) * extension;
-      } else {
-        candle.low = Math.max(0.01, bodyLow - (bodyLow - candle.low) * extension);
-      }
-    }
+    // Keep the simulated tick extremes, just like live non-news candles.
     data.push(candle);
   }
   // Keep the live starting price inside the selected volatility range.
   const scale = initialPrice / price;
   for (const candle of data) {
-    for (const key of ['open', 'high', 'low', 'close']) candle[key] *= scale;
+    for (const key of ['open', 'high', 'low', 'close']) candle[key] = Math.max(0.01, candle[key] * scale);
   }
   candleSeries.setData(data);
   for (const [period, series] of [[50, ma50Series], [200, ma200Series]]) {
