@@ -466,9 +466,8 @@ function momentumExcursion(previous, remaining, amplitude, guideMove, price, sta
     // Persistent intrabar noise crosses candle boundaries. Only the event leg's
     // final few ticks settle toward its outcome; a candle close never resets it.
     const settling=Math.min(1,(remaining-1)/legacyTicks(16));
-    // Size intratick fluctuations against the local move, not the release shock.
-    // Keep opposing ticks, but prevent spike-sized noise from drowning the trend.
-    const localCandleMove = Math.abs(guideMove) * CANDLE_INTERVAL_MS / TICK_INTERVAL_MS;
+    // Use the event's full tick volatility throughout post-spike movement.
+    // The guide, candle pullbacks and sweeps still control the broader path.
     // Each candle gets its own fluctuation scale and burst duration. The price
     // excursion carries across the boundary; neither OHLC nor the close is forced.
     const candleTime = currentCandle ? currentCandle.time : time + CANDLE_INTERVAL_MS / 1000;
@@ -479,16 +478,15 @@ function momentumExcursion(previous, remaining, amplitude, guideMove, price, sta
             persistence:randomBetween(.88,.95)};
     }
     const profile = reaction?.wickProfile || {fraction:.45,persistence:.91};
-    const localAmplitude = Math.min(amplitude, Math.max(price * 0.0008,
-        Math.min(price * 0.005, localCandleMove * profile.fraction)));
+    const localAmplitude = amplitude;
     const persistence = profile.persistence;
-    const noiseScale = Math.sqrt((1-Math.pow(persistence*persistence,TICK_TIME_SCALE))/(1-persistence*persistence));
+    const noiseScale = TICK_NOISE_SCALE;
     const oldSweep=state?.sweepOffset||0;
     const offset=newsSweepOffset(state,remaining,price,previous,guideMove);
     const oldPullback=state?.pullbackOffset||0;
     const pullback=newsCandlePullback(state,remaining,price);
     if(state){state.sweepOffset=offset;state.pullbackOffset=pullback;}
-    return ((previous-oldSweep-oldPullback)*Math.pow(persistence,TICK_TIME_SCALE)+randomBetween(-1,1)*localAmplitude*0.65*noiseScale)*settling+offset+pullback;
+    return ((previous-oldSweep-oldPullback)*Math.pow(persistence,TICK_TIME_SCALE)+randomBetween(-1,1)*localAmplitude*noiseScale)*settling+offset+pullback;
 }
 
 function anticipationMove(nowSeconds, price) {
@@ -805,5 +803,3 @@ function getActiveNews() {
 window.getActiveNews = getActiveNews;
 window.updateNews = updateNews;
 window.NEWS_CONFIG = NEWS_CONFIG;
-
-
