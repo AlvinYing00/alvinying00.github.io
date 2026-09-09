@@ -7,7 +7,7 @@ const chart = LightweightCharts.createChart(
                  grid: { vertLines: { color: '#1a2532' }, horzLines: { color: '#1a2532' } },
                  rightPriceScale: {borderColor: '#24303f', autoScale: true, scaleMargins: {top: 0.12, bottom: 0.12}},
                  timeScale: {borderColor: '#24303f', timeVisible: true, secondsVisible: true, rightOffset: 5},
-                 handleScroll: {vertTouchDrag: false, horzTouchDrag: true},
+                 handleScroll: {vertTouchDrag: true, horzTouchDrag: true},
                  crosshair: {vertLine: {color: '#60768e', labelBackgroundColor: '#30445b'}, horzLine: {color: '#60768e', labelBackgroundColor: '#30445b'}} });
 const candleSeries = chart.addCandlestickSeries({upColor:'#54d7aa', downColor:'#f3788e', borderVisible:false, wickUpColor:'#54d7aa', wickDownColor:'#f3788e'});
 
@@ -219,7 +219,7 @@ function startQuietSetup(direction, level, unit) {
 
 function setQuietPhase(target) {
     const s = quietSetup;
-    s.target = Math.max(0.00001, target);
+    s.target = Math.max(0.01, target);
     s.travelDirection = Math.sign(s.target - currentTickPrice) || s.direction;
     s.age = 0;
     s.minTicks = legacyTicks(STRUCTURE_CONFIG.minPhaseTicks + Math.floor(Math.random() * STRUCTURE_CONFIG.extraPhaseTicks));
@@ -456,14 +456,14 @@ function initChart(priceMin = 9, priceMax = 10) {
     const historyWick = () => Math.min(wickLimit,
       body * (0.25 + Math.random() * 0.35) + candle.open * (0.0015 + Math.random() * 0.0015));
     candle.high = bodyHigh + Math.min(wickLimit, Math.max(candle.high - bodyHigh, historyWick()));
-    candle.low = Math.max(0.00001, bodyLow - Math.min(wickLimit, Math.max(bodyLow - candle.low, historyWick())));
+    candle.low = Math.max(0.01, bodyLow - Math.min(wickLimit, Math.max(bodyLow - candle.low, historyWick())));
     // Occasional one-sided rejection candles: extend only the wick OR tail.
     if (Math.random() < 0.25) {
       const extension = 2 + Math.random();
       if (Math.random() < 0.5) {
         candle.high = bodyHigh + (candle.high - bodyHigh) * extension;
       } else {
-        candle.low = Math.max(0.00001, bodyLow - (bodyLow - candle.low) * extension);
+        candle.low = Math.max(0.01, bodyLow - (bodyLow - candle.low) * extension);
       }
     }
     data.push(candle);
@@ -543,7 +543,7 @@ function triggerRetracement(prevPrice, movedPrice) {
 
   const frac = RETRACE_MIN_FRAC + Math.random() * (RETRACE_MAX_FRAC - RETRACE_MIN_FRAC);
   retraceTarget = movedPrice - delta * frac;
-  retraceTarget = Math.max(0.00001, retraceTarget);
+  retraceTarget = Math.max(0.01, retraceTarget);
 
   retraceSteps = Math.floor(Math.random() * 10) + 10; // 10–19 candles
 
@@ -598,7 +598,7 @@ function updateCurrentCandle(price) {
         beginCandle();
     }
 
-    currentTickPrice = Math.max(0.00001, price);
+    currentTickPrice = Math.max(0.01, price);
 
     currentCandle.high = Math.max(
         currentCandle.high,
@@ -817,7 +817,7 @@ function generateCandle() {
     }
   }
 
-  return Math.max(0.00001, newClose);
+  return Math.max(0.01, newClose);
 }
 
 // Manual moves share the active candle and do not advance its clock.
@@ -827,12 +827,12 @@ function applyManualMove(direction) {
   const value = Number(raw);
   if (!Number.isFinite(value) || raw.trim() === '') return notifyTrading('Enter a valid number for the manual price move.');
   const previousPrice = currentTickPrice;
-  const targetPrice = Math.max(0.00001, previousPrice + direction * Math.abs(value));
+  const targetPrice = Math.max(0.01, previousPrice + direction * Math.abs(value));
   if (!Number.isFinite(targetPrice)) return notifyTrading('Enter a valid number for the manual price move.');
   updateCurrentCandle(targetPrice);
   priceActionState=null;
   // Keep the remaining intrabar path relative to the manually shifted price.
-  if (quietPath && quietPath.target !== null) quietPath.target = Math.max(0.00001,quietPath.target+targetPrice-previousPrice);
+  if (quietPath && quietPath.target !== null) quietPath.target = Math.max(0.01,quietPath.target+targetPrice-previousPrice);
   quietSetup = null;
   quietCooldown = STRUCTURE_CONFIG.minCooldown;
   triggerRetracement(previousPrice, targetPrice);
@@ -873,7 +873,7 @@ function generateMomentumCandle() {
   let target=price+m.direction*(pullback?-1:1)*price*(pullback?0.003+Math.random()*0.006:0.007+Math.random()*0.009);
   if (!pullback) target=m.direction>0 ? Math.max(target,Math.min(previous.high+price*.001,price*1.018)) :
       Math.min(target,Math.max(previous.low-price*.001,price*.982));
-  return Math.max(0.00001,target);
+  return Math.max(0.01,target);
 }
 
 // Start/Stop live market
