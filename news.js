@@ -126,9 +126,9 @@ const NEWS_CONFIG = {
     // Release shock, partial recovery, then noisy price discovery.
     // Fractions are relative to the release price or initial shock.
     reaction: {
-        continuationChance: 0.75, // High/Extreme follow-through probability.
+        continuationChance: 0.65, // High/Extreme follow-through probability.
         continuationReversalChance: 0.5, // Mutually exclusive choice before a confirmed breakout.
-        falseBreakoutChance: 0.6, // Rolled once, only after a completed later candle breaks the first spike extreme.
+        falseBreakoutChance: 0.5, // Rolled once, only after a completed later candle breaks the first spike extreme.
         sustainedReversalChance: 0.5,
         extremeStrengthChance: 0.9,
         extremeStrengthContinuationChance: 0.9,
@@ -388,7 +388,7 @@ function newsSweepOffset(state, remaining, price, previous, guideMove) {
     if (r.nextSweepTime === undefined) r.nextSweepTime=now+randomBetween(12,35);
     if (!state.sweep && now>=r.nextSweepTime && (r.sweepCount||0)<3) {
         r.nextSweepTime=now+randomBetween(40,75);
-        if (Math.random()<.55 && remaining*TICK_SECONDS>35) {
+        if (Math.random()<.60 && remaining*TICK_SECONDS>35) {
             const side=Math.random()<.5?-1:1;
             const recent=data.filter(c=>c.time>r.firstCandle.time).slice(-4);
             const levels=recent.map(c=>side>0?c.high:c.low)
@@ -396,12 +396,18 @@ function newsSweepOffset(state, remaining, price, previous, guideMove) {
             if (levels.length) {
                 const level=side>0?Math.min(...levels):Math.max(...levels);
                 const base=price-previous;
-                const peak=level+side*price*randomBetween(.003,.009)-base;
+                // Only some proposed sweeps use the rapid rejection profile.
+                const fastRejection=Math.random()<.40;
+                const overshoot=fastRejection?randomBetween(.010,.020):randomBetween(.003,.009);
+                const peak=level+side*price*overshoot-base;
                 if (peak*side>0 && Math.abs(peak)<price*.045) {
-                    const reject=Math.random()<.65;
-                    state.sweep={start:now,peak,level,side,reject,
-                        push:randomBetween(2,5),hold:reject?randomBetween(.2,1):randomBetween(3,7),
-                        recover:reject?randomBetween(4,9):randomBetween(9,16)};
+                    const reject=fastRejection || Math.random()<.65;
+                    // Total excursion time, not candle duration: candles remain 15s.
+                    const total=randomBetween(1,2);
+                    const push=fastRejection?total*.30:randomBetween(2,3);
+                    const hold=fastRejection?total*.10:reject?randomBetween(.2,1):randomBetween(3,7);
+                    const recover=fastRejection?total-push-hold:reject?randomBetween(4,9):randomBetween(9,16);
+                    state.sweep={start:now,peak,level,side,reject,fastRejection,push,hold,recover};
                     r.sweepCount=(r.sweepCount||0)+1;
                 }
             }
