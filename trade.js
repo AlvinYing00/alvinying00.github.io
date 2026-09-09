@@ -187,7 +187,7 @@ function saveExitPrice() {
     }
     const raw = document.getElementById('exitPriceInput').value.trim();
     const value = Number(raw);
-    if (!raw || !Number.isFinite(value) || value <= 0) return notifyTrading('Enter a valid price greater than zero.');
+    if (!raw || !Number.isFinite(value) || value < 0.01) return notifyTrading('Enter a valid price of at least 0.01.');
     trade[kind] = value;
     if (kind === 'tp') createOrUpdateTPLine(trade);
     else createOrUpdateSLLine(trade);
@@ -211,10 +211,10 @@ function closeTrade(id, automatic = false) {
 
     let exit;
     if (trade.type === "BUY") {
-        exit = lastPrice - spread;
+        exit = Math.max(0.01, lastPrice - spread);
         trade.profit = (exit - trade.entry) * trade.size;
     } else {
-        exit = lastPrice + spread;
+        exit = Math.max(0.01, lastPrice + spread);
         trade.profit = (trade.entry - exit) * trade.size;
     }
 
@@ -248,10 +248,10 @@ function forceCloseAll() {
         const spread = getSpread(lastPrice);
 
         if (trade.type === "BUY") {
-            trade.exit = lastPrice - spread;
+            trade.exit = Math.max(0.01, lastPrice - spread);
             trade.profit = (trade.exit - trade.entry) * trade.size;
         } else {
-            trade.exit = lastPrice + spread;
+            trade.exit = Math.max(0.01, lastPrice + spread);
             trade.profit = (trade.entry - trade.exit) * trade.size;
         }
 
@@ -290,10 +290,10 @@ function closeAllTrades() {
         let exit;
 
         if (trade.type === "BUY") {
-            exit = lastPrice - spread;
+            exit = Math.max(0.01, lastPrice - spread);
             trade.profit = (exit - trade.entry) * trade.size;
         } else {
-            exit = lastPrice + spread;
+            exit = Math.max(0.01, lastPrice + spread);
             trade.profit = (trade.entry - exit) * trade.size;
         }
 
@@ -368,10 +368,10 @@ function updateFloatingPL(enforceMargin = true) {
         if (!trade.open) return;
 
         if (trade.type === "BUY") {
-            const currentExit = closePrice - spread;
+            const currentExit = Math.max(0.01, closePrice - spread);
             trade.profit = (currentExit - trade.entry) * trade.size;
         } else {
-            const currentExit = closePrice + spread;
+            const currentExit = Math.max(0.01, closePrice + spread);
             trade.profit = (trade.entry - currentExit) * trade.size;
         }
     });
