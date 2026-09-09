@@ -380,8 +380,52 @@ function rescaleNewsTicks(ratio) {
     }
 }
 
-function momentumExcursion(previous, remaining, amplitude, guideMove, price) {
-    if (remaining<=1) return 0;
+// Occasional transient level probes, independent of trade entries and outcome rolls.
+function newsSweepOffset(state, remaining, price, previous, guideMove) {
+    const r=activeNews?.reaction;
+    if (!state || !r?.firstCandle || !r.continuationDecided) return 0;
+    const now=marketSeconds;
+    if (r.nextSweepTime === undefined) r.nextSweepTime=now+randomBetween(12,35);
+    if (!state.sweep && now>=r.nextSweepTime && (r.sweepCount||0)<3) {
+        r.nextSweepTime=now+randomBetween(40,75);
+        if (Math.random()<.55 && remaining*TICK_SECONDS>35) {
+            const side=Math.random()<.5?-1:1;
+            const recent=data.filter(c=>c.time>r.firstCandle.time).slice(-4);
+            const levels=recent.map(c=>side>0?c.high:c.low)
+                .filter(level=>(level-price)*side>=0 && Math.abs(level-price)<price*.035);
+            if (levels.length) {
+                const level=side>0?Math.min(...levels):Math.max(...levels);
+                const base=price-previous;
+                const peak=level+side*price*randomBetween(.003,.009)-base;
+                if (peak*side>0 && Math.abs(peak)<price*.045) {
+                    const reject=Math.random()<.65;
+                    state.sweep={start:now,peak,level,side,reject,
+                        push:randomBetween(2,5),hold:reject?randomBetween(.2,1):randomBetween(3,7),
+                        recover:reject?randomBetween(4,9):randomBetween(9,16)};
+                    r.sweepCount=(r.sweepCount||0)+1;
+                }
+            }
+        }
+    }
+    const sweep=state.sweep;
+    if (!sweep) return 0;
+    const age=now-sweep.start;
+    const smooth=t=>{t=Math.max(0,Math.min(1,t));return t*t*(3-2*t);};
+    let weight;
+    if(age<sweep.push)weight=smooth(age/sweep.push);
+    else if(age<sweep.push+sweep.hold)weight=1;
+    else weight=1-smooth((age-sweep.push-sweep.hold)/sweep.recover);
+    if(age>=sweep.push+sweep.hold+sweep.recover) {
+        state.sweep=null;
+        r.nextSweepTime=Math.max(r.nextSweepTime,now+randomBetween(35,65));
+        return 0;
+    }
+    // Let the selected outcome finish on time even if this path is replaced.
+    return sweep.peak*weight*Math.min(1,Math.max(0,remaining-1)*TICK_SECONDS/2);
+}
+
+function momentumExcursion(previous, remaining, amplitude, guideMove, price, state) {
+    if (remaining<=1) { if(state)state.sweepOffset=0; return 0; }
     // Persistent intrabar noise crosses candle boundaries. Only the event leg's
     // final few ticks settle toward its outcome; a candle close never resets it.
     const settling=Math.min(1,(remaining-1)/legacyTicks(16));
@@ -402,7 +446,10 @@ function momentumExcursion(previous, remaining, amplitude, guideMove, price) {
         Math.min(price * 0.005, localCandleMove * profile.fraction)));
     const persistence = profile.persistence;
     const noiseScale = Math.sqrt((1-Math.pow(persistence*persistence,TICK_TIME_SCALE))/(1-persistence*persistence));
-    return (previous*Math.pow(persistence,TICK_TIME_SCALE)+randomBetween(-1,1)*localAmplitude*0.65*noiseScale)*settling;
+    const oldSweep=state?.sweepOffset||0;
+    const offset=newsSweepOffset(state,remaining,price,previous,guideMove);
+    if(state)state.sweepOffset=offset;
+    return ((previous-oldSweep)*Math.pow(persistence,TICK_TIME_SCALE)+randomBetween(-1,1)*localAmplitude*0.65*noiseScale)*settling+offset;
 }
 
 function anticipationMove(nowSeconds, price) {
@@ -590,7 +637,7 @@ function applyNewsToPriceMove(baseMove, nowSeconds, price) {
             const guideAfter=continuationGuide(leg,follow.startPrice,elapsed+step);
             // Noisy bridge: alternating excursions, with an exact final breakout.
             const nextExcursion = momentumExcursion(follow.excursion,remaining,
-                follow.noiseAmplitude,guideAfter-guideBefore,price);
+                follow.noiseAmplitude,guideAfter-guideBefore,price,follow);
             // Correct any manual price offset gradually, never flatten the
             // unequal candle pushes into one constant-speed reversal.
             const move = guideAfter-guideBefore +
@@ -656,7 +703,7 @@ function applyNewsToPriceMove(baseMove, nowSeconds, price) {
             const before=continuationGuide(flow,flow.startPrice,elapsed);
             const step = Math.min(1,remaining);
             const after=continuationGuide(flow,flow.startPrice,elapsed+step);
-            const excursion=momentumExcursion(flow.excursion,remaining,newsNoiseAmplitude(reaction),after-before,price);
+            const excursion=momentumExcursion(flow.excursion,remaining,newsNoiseAmplitude(reaction),after-before,price,flow);
             const move=after-before+(before+flow.excursion-price)/Math.max(1,remaining)+excursion-flow.excursion;
             flow.excursion=excursion;flow.remaining=Math.max(0,remaining-step);
             return move;
