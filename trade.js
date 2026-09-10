@@ -73,6 +73,7 @@ function setMarketOpen(state) {
     marketOpen = !!state;
     console.log("Trade module: marketOpen =", marketOpen);
     if (typeof renderTables === "function") renderTables();
+    if (typeof eaRender === 'function') eaRender(true);
 }
 
 function isMarketOpen() {
@@ -83,6 +84,7 @@ function resetAccountBalance() {
     if (!isMarketOpen()) return notifyTrading('Start the market before resetting your balance.');
     if (positions.some(trade => trade.open)) return notifyTrading('Close all open trades before resetting your balance.');
     balance = volatilityConfig[currentVolatility].balance;
+    if (typeof eaOnAccountReset === 'function') eaOnAccountReset();
     renderTables();
     notifyTrading(`Balance reset to $${balance.toFixed(2)}.`);
 }
@@ -119,11 +121,14 @@ function placeSell() {
     placeOrder('SELL');
 }
 
-function placeOrder(type) {
+function placeOrder(type, automation = null) {
     if (!isMarketOpen()) return notifyTrading('Start the market before placing a trade.');
+    if (!['BUY','SELL'].includes(type)) return;
+    if (automation && (automation.source !== 'ea' || typeof ea === 'undefined' || !ea.enabled || ea.state?.halted)) return;
     if (!data || data.length < 1) return notifyTrading("No market data available.");
-    const settings = orderSettings();
+    const settings = automation ? {lots:automation.lots,size:automation.lots*ACCOUNT_CONFIG.unitsPerLot,leverage:automation.leverage} : orderSettings();
     if (!settings) return notifyTrading('Enter a lot size of at least 0.01 in steps of 0.01 and select a leverage.');
+    if (!Number.isFinite(settings.lots) || settings.lots < .01 || Math.abs(settings.lots*100-Math.round(settings.lots*100))>1e-7 || ![1,10,100,1000].includes(settings.leverage)) return;
     updateFloatingPL();
     const lastPrice =
         typeof currentTickPrice === "number"
@@ -152,8 +157,11 @@ function placeOrder(type) {
         open: true,
         exit: null,
         profit: -openingLoss,
-        tp: null,
-        sl: null,
+        tp: automation ? automation.tp : null,
+        sl: automation ? automation.sl : null,
+        source: automation ? 'ea' : 'manual',
+        ...(automation ? {strategies:automation.strategies, initialRiskDistance:automation.initialRiskDistance,
+            trailing:automation.trailing,breakEven:automation.breakEven,equityAtEntry:automation.equityAtEntry} : {}),
         tpLine: null,
         slLine: null,
         timestamp: new Date().toLocaleTimeString()
@@ -161,8 +169,10 @@ function placeOrder(type) {
 
     positions.push(trade);
     createEntryLine(trade);
+    if (automation) { createOrUpdateTPLine(trade); createOrUpdateSLLine(trade); }
 
     renderTables();
+    return trade;
 }
 
 let exitPriceEditor = null;
@@ -242,6 +252,7 @@ function closeTrade(id, automatic = false) {
     trade.closedAt = new Date().toLocaleTimeString();
 
     balance += trade.profit;
+    if (typeof eaOnTradeClosed === 'function') eaOnTradeClosed(trade);
     renderTables();
 }
 
@@ -276,6 +287,7 @@ function forceCloseAll() {
         }
         trade.closedAt = new Date().toLocaleTimeString();
         balance += trade.profit;
+        if (typeof eaOnTradeClosed === 'function') eaOnTradeClosed(trade);
     });
 
     notifyTrading('Account equity reached zero or below. All positions were closed because your balance could no longer cover net trading losses.');
@@ -324,6 +336,7 @@ function closeAllTrades() {
         }
 
         balance += trade.profit;
+        if (typeof eaOnTradeClosed === 'function') eaOnTradeClosed(trade);
     });
 
     renderTables();
@@ -466,7 +479,7 @@ function renderTables() {
         const profitClass = trade.profit >= 0 ? "profit" : "loss";
         const row = document.createElement("tr");
         row.innerHTML = `
-            <td>#${trade.id}<small class="positionTerms">${trade.lots.toFixed(2)} lots · 1:${trade.leverage}</small></td>
+            <td>#${trade.id}${trade.source === 'ea' ? ' · EA' : ''}<small class="positionTerms">${trade.lots.toFixed(2)} lots · 1:${trade.leverage}</small></td>
             <td><span class="tradeSide ${trade.type.toLowerCase()}">${trade.type}</span></td>
             <td>${trade.entry.toFixed(2)}</td>
             <td>${data[data.length - 1].close.toFixed(2)}</td>
@@ -499,7 +512,7 @@ function renderTables() {
         const profitClass = trade.profit >= 0 ? "profit" : "loss";
         const row = document.createElement("tr");
         row.innerHTML = `
-            <td>#${trade.id}<small class="positionTerms">${trade.lots.toFixed(2)} lots · 1:${trade.leverage}</small></td>
+            <td>#${trade.id}${trade.source === 'ea' ? ' · EA' : ''}<small class="positionTerms">${trade.lots.toFixed(2)} lots · 1:${trade.leverage}</small></td>
             <td><span class="tradeSide ${trade.type.toLowerCase()}">${trade.type}</span></td>
             <td>${trade.entry.toFixed(2)}</td>
             <td>${trade.exit.toFixed(2)}</td>
