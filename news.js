@@ -137,7 +137,7 @@ const NEWS_CONFIG = {
         extremeSecondSpikeDelaySeconds: 4, // Measured from the first spike.
         extremeSecondSpikeFraction: 0.5, // Half the first spike's absolute price change.
         // Each event can override these weights using its own impactChances.
-        impactChances: {medium: 0.30, high: 0.35, extreme: 0.35},
+        impactChances: {low: 0.25, medium: 0.25, high: 0.25, extreme: 0.25},
         delaySeconds: 2, // News is visible immediately; price shock waits two seconds.
         panicMinTickFraction: 0.012, // Pre-spike moves: 1.2–3.5% of release price per tick.
         panicMaxTickFraction: 0.035,
@@ -235,9 +235,9 @@ function startNews(event, type, nowSeconds) {
             : NEWS_CONFIG.fixed.durationSeconds;
 
     const weights = event.impactChances || NEWS_CONFIG.reaction.impactChances;
-    const roll = Math.random() * (weights.medium + weights.high + weights.extreme);
-    const emotionalImpact = roll < weights.medium ? 'medium'
-        : roll < weights.medium + weights.high ? 'high' : 'extreme';
+    const impacts = ['low', 'medium', 'high', 'extreme'];
+    let roll = Math.random() * impacts.reduce((sum, key) => sum + (weights[key] || 0), 0);
+    const emotionalImpact = impacts.find(key => (roll -= weights[key] || 0) < 0) || 'medium';
     // A fresh release takes priority over any older follow-through.
     newsContinuation = null;
 
@@ -658,6 +658,34 @@ function renderNews(nowSeconds) {
     }
 }
 
+// The first Low candle rejects its spike through real ticks. Subsequent candles
+// use the existing shared news outcomes. No completed OHLC is rewritten.
+function lowNewsCloseTarget(candle, side, bodyFraction) {
+    const range = candle.high - candle.low;
+    const wickDistance = side > 0 ? candle.high - candle.open : candle.open - candle.low;
+    const body = Math.max(bodyFraction * range, bodyFraction * wickDistance / (1 - bodyFraction));
+    const target = candle.open - side * body;
+    // At the floor a red body below the open is impossible. A green shooting
+    // star still has the same small body and dominant upper rejection wick.
+    if (target < 0.01) return candle.open + bodyFraction * range;
+    return target;
+}
+
+function lowNewsRejectionMove(reaction, price, nowSeconds) {
+    const shape = reaction.lowShape;
+    const candle = currentCandle;
+    if (!shape || !candle || candle.time !== reaction.spikeTimes[0]) return null;
+    const remaining = TICKS_PER_CANDLE - candleTickCount;
+    const target = lowNewsCloseTarget(candle, shape.side, shape.bodyFraction);
+    if (remaining <= 1 + 1e-7) return target - price;
+    const progress = Math.min(1, (nowSeconds - shape.start) / shape.duration);
+    const smooth = progress * progress * (3 - 2 * progress);
+    const guide = shape.peak + (target - shape.peak) * (0.4 * progress + 0.6 * smooth);
+    const wave = Math.sin((nowSeconds - shape.start) * 2 * Math.PI / shape.waveSeconds);
+    const noise = (wave * 0.055 + randomBetween(-0.012, 0.012)) * reaction.size * Math.sin(Math.PI * progress);
+    return Math.max(0.01, guide + noise) - price;
+}
+
 function applyNewsToPriceMove(baseMove, nowSeconds, price) {
 
     updateNews(nowSeconds);
@@ -706,7 +734,18 @@ function applyNewsToPriceMove(baseMove, nowSeconds, price) {
 
     const cfg = NEWS_CONFIG.reaction;
     const reactionTime = activeNews.startTime + cfg.delaySeconds;
+    const lowImpact = activeNews.emotionalImpact === 'low';
+    // A spike on the final tick could not reject before the 15s close. In that
+    // edge case let Low spike in the next candle, without closing this one early.
+    if (lowImpact && !activeNews.reaction && nowSeconds >= reactionTime &&
+        (TICKS_PER_CANDLE - candleTickCount) * TICK_SECONDS < 1.5) return baseMove;
     if (nowSeconds < reactionTime) {
+        if (lowImpact) {
+            if (!activeNews.panic) activeNews.panic = {anchor: price};
+            const anchor = activeNews.panic.anchor;
+            const next = price + randomBetween(-1, 1) * anchor * .003 * TICK_NOISE_SCALE;
+            return Math.max(anchor * .994, Math.min(anchor * 1.006, next)) - price;
+        }
         if (!activeNews.panic) activeNews.panic = {anchor: price, sign: 0, run: 0};
         const panic = activeNews.panic;
         // Direction-independent bursts; no more than two ticks in one direction.
@@ -728,11 +767,33 @@ function applyNewsToPriceMove(baseMove, nowSeconds, price) {
             secondShockDone: false,
             spikeTimes: [currentCandle ? currentCandle.time : time + CANDLE_INTERVAL_MS / 1000],
             recoverySeconds: Math.max(TICK_SECONDS, (TICKS_PER_CANDLE - candleTickCount - 1) * TICK_SECONDS) };
+        if (lowImpact) {
+            const reaction = activeNews.reaction;
+            let side = activeNews.direction;
+            const open = currentCandle?.open ?? price;
+            // Near the price floor there is no room for a lower wick; choose
+            // the shooting-star profile instead of forcing a negative price.
+            if (side < 0 && Math.min(open, price) < 0.02) side = 1;
+            activeNews.direction = side;
+            const oppositeWick = currentCandle
+                ? (side > 0 ? open - currentCandle.low : currentCandle.high - open) : 0;
+            const distance = Math.max(reaction.size, oppositeWick * 8);
+            const peak = side > 0 ? Math.max(price, open) + distance : Math.max(.01, Math.min(price, open) - distance);
+            reaction.size = Math.abs(peak - price);
+            reaction.lowShape = {side, peak, start: nowSeconds,
+                duration: reaction.recoverySeconds, bodyFraction: randomBetween(.05, .15),
+                waveSeconds: randomBetween(.55, .95)};
+            return peak - price;
+        }
         // One delayed shock tick; candle creation/closure stays with the tick engine.
         return activeNews.direction * activeNews.reaction.size;
     }
 
     const reaction = activeNews.reaction;
+    if (lowImpact) {
+        const rejection = lowNewsRejectionMove(reaction, price, nowSeconds);
+        if (rejection !== null) return rejection;
+    }
     if(reaction.discovery && nowSeconds>reaction.discovery.startTime) {
         const flow=reaction.discovery, remaining=flow.remaining;
         if(remaining>0) {
