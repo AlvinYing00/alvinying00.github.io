@@ -620,6 +620,7 @@ function updateCurrentCandle(price) {
     sessionLow = Math.min(sessionLow ?? currentTickPrice, currentCandle.low);
 
     updatePriceDisplay();
+    if (typeof eaPriceTick === 'function') eaPriceTick();
 }
 
 function generateMarketTick() {
@@ -696,6 +697,7 @@ function generateMarketTick() {
             recentNewsRanges = recentNewsRanges.slice(-12);
         }
         onNewsCandleClosed(currentCandle, marketSeconds);
+        if (typeof eaCandleClosed === 'function') eaCandleClosed(currentCandle);
 
         // Start the next candle on the next tick (or manual price move).
         currentCandle = null;
@@ -740,6 +742,7 @@ function syncMarketClock(flush = false) {
             candleSeries.setData(data);
             updatePriceDisplay();
             renderNews(marketSeconds);
+            if (typeof eaRender === 'function') eaRender(true);
         }
     }
     // Large backlogs yield between batches so the page stays responsive.
@@ -1052,6 +1055,7 @@ function applyVolatility(level) {
 
     // Init first candle using configured range
     initChart(cfg.priceMin, cfg.priceMax);
+    if (typeof eaOnAccountReset === 'function') eaOnAccountReset();
 }
 
 volatilitySelect.addEventListener('change', e => {
