@@ -3,6 +3,33 @@
 let positions = []; // Active and closed trades
 let orderId = 1;
 let balance = 100.00;
+// FRX contract: one lot is one unit. Each order keeps its opening settings.
+const ACCOUNT_CONFIG = {unitsPerLot: 1, stopOutLevel: 0.5};
+
+function accountSnapshot() {
+    const open = positions.filter(p => p.open);
+    const floating = open.reduce((sum, p) => sum + p.profit, 0);
+    const used = open.reduce((sum, p) => sum + p.margin, 0);
+    const equity = balance + floating;
+    return {floating, used, equity, available: equity - used,
+        level: used > 0 ? equity / used : null};
+}
+
+function orderSettings() {
+    const lots = Number(document.getElementById('lotSize').value);
+    const leverage = Number(document.getElementById('leverageSelect').value);
+    if (!Number.isFinite(lots) || lots < 0.01 ||
+        Math.abs(lots * 100 - Math.round(lots * 100)) > 1e-7 ||
+        ![1, 10, 100, 1000].includes(leverage)) return null;
+    return {lots, leverage, size: lots * ACCOUNT_CONFIG.unitsPerLot};
+}
+
+function updateOrderEstimate() {
+    const settings = orderSettings();
+    const price = typeof currentTickPrice === 'number' ? currentTickPrice : 0;
+    updateLiveText(document.getElementById('orderMarginEstimate'), settings
+        ? '$' + (price * settings.size / settings.leverage).toFixed(2) : 'Check lot size');
+}
 
 // Elements
 const balanceDisplay = document.getElementById("balance");
@@ -85,62 +112,46 @@ function removeEntryLine(trade) {
 
 // ---- Place Orders ----
 function placeBuy() {
-    if (!isMarketOpen()) return notifyTrading("Market is closed! Cannot place BUY order.");
-    if (balance <= 0) return notifyTrading("Insufficient funds! Balance is 0.");
-    if (!data || data.length < 1) return notifyTrading("No market data available.");
-
-    const lastPrice =
-        typeof currentTickPrice === "number"
-            ? currentTickPrice
-            : data[data.length - 1].close;
-    const spread = getSpread(lastPrice);
-    const entry = lastPrice + spread;
-
-    const trade = {
-        id: orderId++,
-        type: "BUY",
-        entry,
-        spread,
-        size: 1,
-        open: true,
-        exit: null,
-        profit: 0,
-        tp: null,
-        sl: null,
-        tpLine: null,
-        slLine: null,
-        timestamp: new Date().toLocaleTimeString()
-    };
-
-    positions.push(trade);
-    createEntryLine(trade);
-
-    // 🔑 calculate floating P/L immediately
-    updateFloatingPL(false);
-    renderTables();
+    placeOrder('BUY');
 }
 
 function placeSell() {
-    if (!isMarketOpen()) return notifyTrading("Market is closed! Cannot place SELL order.");
-    if (balance <= 0) return notifyTrading("Insufficient funds! Balance is 0.");
-    if (!data || data.length < 1) return notifyTrading("No market data available.");
+    placeOrder('SELL');
+}
 
+function placeOrder(type) {
+    if (!isMarketOpen()) return notifyTrading('Start the market before placing a trade.');
+    if (!data || data.length < 1) return notifyTrading("No market data available.");
+    const settings = orderSettings();
+    if (!settings) return notifyTrading('Enter a lot size of at least 0.01 in steps of 0.01 and select a leverage.');
+    updateFloatingPL();
     const lastPrice =
         typeof currentTickPrice === "number"
             ? currentTickPrice
             : data[data.length - 1].close;
     const spread = getSpread(lastPrice);
-    const entry = Math.max(0.01, lastPrice - spread);
-
+    const bid = Math.max(0.01, lastPrice - spread);
+    const ask = Math.max(0.01, lastPrice + spread);
+    const entry = type === 'BUY' ? ask : bid;
+    // Reserve gross margin per order, including hedged orders. Spread is a
+    // floating loss, not another cash deduction or a leverage multiplier.
+    const margin = lastPrice * settings.size / settings.leverage;
+    const openingLoss = (ask - bid) * settings.size;
+    const account = accountSnapshot();
+    if (!Number.isFinite(margin + openingLoss) || account.equity <= 0 ||
+        margin + openingLoss > account.available + 1e-9) {
+        return notifyTrading('Insufficient available margin for this lot size, including spread. Reduce the lot size or close a position.');
+    }
     const trade = {
         id: orderId++,
-        type: "SELL",
+        type,
         entry,
         spread,
-        size: 1,
+        ...settings,
+        margin,
         open: true,
         exit: null,
-        profit: 0,
+        profit: -openingLoss,
         tp: null,
         sl: null,
         tpLine: null,
@@ -151,8 +162,6 @@ function placeSell() {
     positions.push(trade);
     createEntryLine(trade);
 
-    // 🔑 calculate floating P/L immediately
-    updateFloatingPL(false);
     renderTables();
 }
 
@@ -266,10 +275,10 @@ function forceCloseAll() {
             trade.slLine = null;
         }
         trade.closedAt = new Date().toLocaleTimeString();
+        balance += trade.profit;
     });
 
-    notifyTrading('Insufficient funds. All positions were closed by the margin check.');
-    balance = 0.00;
+    notifyTrading('Margin level reached 50% or below. All positions were closed; remaining equity was settled to your balance.');
     renderTables();
 }
 
@@ -342,15 +351,17 @@ function updateFloatingPL(enforceMargin = true) {
         if (!marketOpen) return;
 
         if (trade.type === "BUY") {
-            if (trade.tp !== null && lastCandle.high >= trade.tp) {
+            const executablePrice = Math.max(0.01, closePrice - spread);
+            if (trade.tp !== null && executablePrice >= trade.tp) {
                 hit = true;
-            } else if (trade.sl !== null && lastCandle.low <= trade.sl) {
+            } else if (trade.sl !== null && executablePrice <= trade.sl) {
                 hit = true;
             }
         } else { // SELL
-            if (trade.tp !== null && lastCandle.low <= trade.tp) {
+            const executablePrice = Math.max(0.01, closePrice + spread);
+            if (trade.tp !== null && executablePrice <= trade.tp) {
                 hit = true;
-            } else if (trade.sl !== null && lastCandle.high >= trade.sl) {
+            } else if (trade.sl !== null && executablePrice >= trade.sl) {
                 hit = true;
             }
         }
@@ -378,11 +389,8 @@ function updateFloatingPL(enforceMargin = true) {
 
     // ---- 3️⃣ Margin Check ----
     if (enforceMargin && marketOpen) {
-        const totalFloatingLoss = positions
-            .filter(p => p.open && p.profit < 0)
-            .reduce((sum, p) => sum + Math.abs(p.profit), 0);
-
-        if (totalFloatingLoss > balance) {
+        const account = accountSnapshot();
+        if (account.used > 0 && account.equity <= account.used * ACCOUNT_CONFIG.stopOutLevel) {
             forceCloseAll();
         }
     }
@@ -418,6 +426,11 @@ function renderTables() {
         updateLiveText(element, value);
     };
     uiText('cashBalance', '$' + balance.toFixed(2));
+    const account = accountSnapshot();
+    uiText('usedMargin', '$' + account.used.toFixed(2));
+    uiText('availableMargin', '$' + account.available.toFixed(2));
+    uiText('marginLevel', account.level === null ? '—' : (account.level * 100).toFixed(1) + '%');
+    updateOrderEstimate();
     uiText('floatingPL', (floatingPL > 0 ? '+$' : floatingPL < 0 ? '−$' : '$') + Math.abs(floatingPL).toFixed(2));
     const floatingDisplay = document.getElementById('floatingPL');
     if (floatingDisplay) floatingDisplay.className = floatingPL > 0 ? 'profit' : floatingPL < 0 ? 'loss' : '';
@@ -452,7 +465,7 @@ function renderTables() {
         const profitClass = trade.profit >= 0 ? "profit" : "loss";
         const row = document.createElement("tr");
         row.innerHTML = `
-            <td>#${trade.id}</td>
+            <td>#${trade.id}<small class="positionTerms">${trade.lots.toFixed(2)} lots · 1:${trade.leverage}</small></td>
             <td><span class="tradeSide ${trade.type.toLowerCase()}">${trade.type}</span></td>
             <td>${trade.entry.toFixed(2)}</td>
             <td>${data[data.length - 1].close.toFixed(2)}</td>
@@ -485,7 +498,7 @@ function renderTables() {
         const profitClass = trade.profit >= 0 ? "profit" : "loss";
         const row = document.createElement("tr");
         row.innerHTML = `
-            <td>#${trade.id}</td>
+            <td>#${trade.id}<small class="positionTerms">${trade.lots.toFixed(2)} lots · 1:${trade.leverage}</small></td>
             <td><span class="tradeSide ${trade.type.toLowerCase()}">${trade.type}</span></td>
             <td>${trade.entry.toFixed(2)}</td>
             <td>${trade.exit.toFixed(2)}</td>
@@ -509,4 +522,3 @@ window.closeAllTrades = closeAllTrades;
 
 // Initial sync
 balanceDisplay.textContent = balance.toFixed(2);
-
