@@ -4,7 +4,7 @@ let positions = []; // Active and closed trades
 let orderId = 1;
 let balance = 100.00;
 // FRX contract: one lot is one unit. Each order keeps its opening settings.
-const ACCOUNT_CONFIG = {unitsPerLot: 1, stopOutLevel: 0.5};
+const ACCOUNT_CONFIG = {unitsPerLot: 1};
 
 function accountSnapshot() {
     const open = positions.filter(p => p.open);
@@ -278,7 +278,7 @@ function forceCloseAll() {
         balance += trade.profit;
     });
 
-    notifyTrading('Margin level reached 50% or below. All positions were closed; remaining equity was settled to your balance.');
+    notifyTrading('Account equity reached zero or below. All positions were closed because your balance could no longer cover net trading losses.');
     renderTables();
 }
 
@@ -390,7 +390,8 @@ function updateFloatingPL(enforceMargin = true) {
     // ---- 3️⃣ Margin Check ----
     if (enforceMargin && marketOpen) {
         const account = accountSnapshot();
-        if (account.used > 0 && account.equity <= account.used * ACCOUNT_CONFIG.stopOutLevel) {
+        // Net all winners and losers; reserved margin only limits new orders.
+        if (positions.some(p => p.open) && account.equity <= 0) {
             forceCloseAll();
         }
     }
