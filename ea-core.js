@@ -7,6 +7,7 @@
     crossover: ['MA crossover', 'MA10 crosses MA30 on a completed candle.'],
     breakout: ['Range breakout', 'A close breaks the preceding 20-candle high or low.'],
     sweep: ['Liquidity rejection', 'Price sweeps a 10-candle extreme and closes back inside.'],
+    snr: ['Key levels & SNR', 'Confirmed support/resistance zones: rejection bounces and breakout retests.'],
     engulfing: ['Engulfing reversal', 'An opposing candle body engulfs the previous body.'],
     rsi: ['RSI recovery', 'RSI14 returns above 30 or below 70 after an extreme.'],
     bands: ['Bollinger re-entry', 'Price returns inside a 20-candle, two-deviation band.'],
@@ -29,6 +30,68 @@
     return gain+loss===0?50:100*gain/(gain+loss);
   }
   function band(bars) {const values=bars.slice(-20).map(b=>b.close),mid=mean(values),dev=Math.sqrt(mean(values.map(v=>(v-mid)**2)));return {high:mid+2*dev,low:mid-2*dev};}
+  function keyLevels(history) {
+    // Only earlier completed candles enter level discovery. A pivot needs two
+    // candles on both sides, and a zone needs two distinct visits, five bars apart.
+    const past=history.slice(-80);
+    if(past.length<15)return [];
+    const volatility=atr(past);
+    if(!Number.isFinite(volatility)||volatility<=0)return [];
+    const tolerance=Math.max(volatility*.18,Math.abs(past.at(-1).close)*.0005,1e-8);
+    const zones=[];
+    for(let i=2;i<past.length-2;i++) {
+      const neighbors=[past[i-2],past[i-1],past[i+1],past[i+2]];
+      for(const role of ['support','resistance']) {
+        const field=role==='support'?'low':'high',price=past[i][field];
+        const pivot=role==='support'
+          ? neighbors.every(b=>price<=b.low)&&neighbors.some(b=>price<b.low)
+          : neighbors.every(b=>price>=b.high)&&neighbors.some(b=>price>b.high);
+        if(!pivot)continue;
+        const zone=zones.find(z=>z.originalRole===role&&Math.abs(z.price-price)<=tolerance&&
+          Math.max(z.max,price)-Math.min(z.min,price)<=tolerance*2);
+        if(zone) {
+          if(i-zone.lastTouch<5)continue;
+          zone.price=(zone.price*zone.touches+price)/(zone.touches+1);
+          zone.touches++;zone.lastTouch=i;zone.min=Math.min(zone.min,price);zone.max=Math.max(zone.max,price);
+          if(zone.touches===2)zone.established=i+2;
+        } else zones.push({price,originalRole:role,role,touches:1,lastTouch:i,min:price,max:price,established:null});
+      }
+    }
+    return zones.filter(z=>z.touches>=2).map(zone=>{
+      const z={...zone,tolerance,volatility,flipped:false};
+      // A completed close through a zone changes its role. The signal candle
+      // cannot establish or flip a level and trade its own breakout at once.
+      for(let i=z.established;i<past.length;i++) {
+        if(z.role==='resistance'&&past[i].close>z.price+tolerance){z.role='support';z.flipped=true;}
+        else if(z.role==='support'&&past[i].close<z.price-tolerance){z.role='resistance';z.flipped=true;}
+      }
+      return z;
+    });
+  }
+  function supportResistanceSignal(bars) {
+    if(bars.length<51)return 0;
+    const b=bars.at(-1),p=bars.at(-2),range=b.high-b.low;
+    if(range<=0||Math.abs(b.close-b.open)<range*.35)return 0;
+    const side=b.close>b.open?1:-1;
+    if(side>0&&b.close<b.low+range*.65)return 0;
+    if(side<0&&b.close>b.high-range*.65)return 0;
+    const zones=keyLevels(bars.slice(0,-1));
+    for(const z of zones) {
+      const {price,tolerance,volatility}=z;
+      const bounce=side>0
+        ? z.role==='support'&&p.close>price+tolerance&&b.open>=price-tolerance&&
+          b.low<=price+tolerance&&b.low>=price-volatility*.5&&b.close>price+tolerance
+        : z.role==='resistance'&&p.close<price-tolerance&&b.open<=price+tolerance&&
+          b.high>=price-tolerance&&b.high<=price+volatility*.5&&b.close<price-tolerance;
+      if(!bounce)continue;
+      // Skip a bounce straight into another established opposing zone.
+      const crowded=zones.some(other=>side>0
+        ? other.role==='resistance'&&other.price>b.close&&other.price-b.close<volatility*.75
+        : other.role==='support'&&other.price<b.close&&b.close-other.price<volatility*.75);
+      if(!crowded)return side;
+    }
+    return 0;
+  }
   function validate(c) {
     if(!c||!Array.isArray(c.strategies)||c.strategies.length<1||c.strategies.length>3||new Set(c.strategies).size!==c.strategies.length||c.strategies.some(k=>!Object.hasOwn(strategies,k)))return 'Choose one to three different strategies.';
     if(c.strategies.includes('news')&&!c.tradeNews)return 'News reaction requires Trade news.';
@@ -67,6 +130,7 @@
       if(key==='crossover'){const old=ma(before,10)-ma(before,30),next=ma(bars,10)-ma(bars,30);if(old<=0&&next>0)side=1;if(old>=0&&next<0)side=-1;}
       if(key==='breakout'){const window=bars.slice(-21,-1);if(b.close>Math.max(...window.map(v=>v.high)))side=1;else if(b.close<Math.min(...window.map(v=>v.low)))side=-1;}
       if(key==='sweep'){if(b.low<low&&b.close>low&&direction>0)side=1;if(b.high>high&&b.close<high&&direction<0)side=-1;}
+      if(key==='snr')side=supportResistanceSignal(bars);
       if(key==='engulfing'){if(p.close<p.open&&direction>0&&b.open<=p.close&&b.close>p.open)side=1;if(p.close>p.open&&direction<0&&b.open>=p.close&&b.close<p.open)side=-1;}
       if(key==='rsi'){if(rsi(before)<30&&rsi(bars)>=30)side=1;if(rsi(before)>70&&rsi(bars)<=70)side=-1;}
       if(key==='bands'){const old=band(before),now=band(bars);if(p.close<old.low&&b.close>now.low)side=1;if(p.close>old.high&&b.close<now.high)side=-1;}
@@ -160,7 +224,7 @@
   function workerScript() {
     return '('+installEACore.toString()+')(self);self.onmessage = function(event) { try { const {tape,config,from,to}=event.data;self.postMessage({result:self.EACore.replay(tape,config,from,to)}); } catch(error) { self.postMessage({error:error.message}); } };';
   }
-  const api={strategies,defaults,validate,state,observe,closed,risk,signals,plan,decide,trailingStop,spread,exitPrice,replay,atr,workerScript};
+  const api={strategies,defaults,validate,state,observe,closed,risk,signals,plan,decide,trailingStop,spread,exitPrice,replay,atr,workerScript,keyLevels,supportResistanceSignal};
   if(typeof module==='object'&&module.exports)module.exports=api;
   root.EACore=api;
 })(typeof globalThis==='object'?globalThis:this);
