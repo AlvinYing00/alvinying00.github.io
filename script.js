@@ -16,7 +16,7 @@ let time = 0;
 let marketInterval = null;
 
 // ---- High-frequency tick engine ----
-// News cadence changes with event age; candles always represent 15 seconds.
+// News ticks every 100ms, quiet ticks every 200ms; candles always represent 15 seconds.
 const DYNAMIC_TICKS = true;
 let TICK_INTERVAL_MS = 200;
 let TICK_SECONDS = TICK_INTERVAL_MS / 1000;
@@ -330,6 +330,10 @@ const ma200Series = chart.addLineSeries({
   lastValueVisible: false,
 });
 
+// Keep the already calculated values when candle history rolls forward. Rebuilding
+// the first retained averages from truncated candles would change their values.
+const movingAverageHistory = {50: [], 200: []};
+
 // Hidden averages keep accumulating completed-candle values.
 for (const [id, series] of [['showMA50', ma50Series], ['showMA200', ma200Series]]) {
   const checkbox = document.getElementById(id);
@@ -355,22 +359,21 @@ function calculateMA(period, index) {
 
 function updateMovingAveragesIncremental() {
   const i = data.length - 1;
-
-  const ma50 = calculateMA(50, i);
-  if (ma50 !== null) {
-    ma50Series.update({
-      time: data[i].time,
-      value: ma50,
-    });
+  for (const [period, series] of [[50, ma50Series], [200, ma200Series]]) {
+    const value = calculateMA(period, i);
+    if (value === null) continue;
+    const point = {time: data[i].time, value};
+    const history = movingAverageHistory[period];
+    if (history.at(-1)?.time === point.time) history[history.length - 1] = point;
+    else history.push(point);
+    if (!batchingTicks) series.update(point);
   }
+}
 
-  const ma200 = calculateMA(200, i);
-  if (ma200 !== null) {
-    ma200Series.update({
-      time: data[i].time,
-      value: ma200,
-    });
-  }
+function refreshChartSeries() {
+  candleSeries.setData(data);
+  ma50Series.setData(movingAverageHistory[50]);
+  ma200Series.setData(movingAverageHistory[200]);
 }
 
 function scheduleNextPattern() {
@@ -478,9 +481,10 @@ function initChart(priceMin = 9, priceMax = 10) {
   }
   candleSeries.setData(data);
   for (const [period, series] of [[50, ma50Series], [200, ma200Series]]) {
-    series.setData(data.map((candle, index) => ({
+    movingAverageHistory[period] = data.map((candle, index) => ({
       time: candle.time, value: calculateMA(period, index)
-    })));
+    }));
+    series.setData(movingAverageHistory[period]);
   }
   currentTickPrice = data[data.length - 1].close;
   currentCandle = null;
@@ -591,7 +595,13 @@ function beginCandle() {
 
     if (data.length > 3000) {
         data.shift();
-        if (!batchingTicks) candleSeries.setData(data);
+        // All series share one time axis, including hidden indicators. Retaining
+        // old MA timestamps would shift drawings and the Latest chart shortcut.
+        for (const period of [50, 200]) {
+            const history = movingAverageHistory[period];
+            while (history.length && history[0].time < data[0].time) history.shift();
+        }
+        if (!batchingTicks) refreshChartSeries();
     }
 }
 
@@ -721,16 +731,32 @@ function startTickEngine() {
     );
 }
 
-function syncMarketClock(flush = false) {
+function isMarketCatchingUp() {
+    // Allow normal timer jitter, but never accept manual orders between backlog
+    // batches or immediately after returning to a long-suspended tab.
+    return Boolean(marketInterval && lastTickWallTime !== null &&
+        (catchUpTimer !== null || Date.now() - lastTickWallTime > 2000));
+}
+
+function syncMarketClock() {
     if (!marketInterval || lastTickWallTime === null) return;
+    const wasCatchingUp = isMarketCatchingUp();
+    if (catchUpTimer !== null) clearTimeout(catchUpTimer);
+    catchUpTimer = null;
     const now = Date.now();
-    if (now < lastTickWallTime) { lastTickWallTime = now; return; }
-    if (now - lastTickWallTime < nextTickDuration()) return;
+    if (now < lastTickWallTime) lastTickWallTime = now;
+    if (now - lastTickWallTime < nextTickDuration()) {
+        if (wasCatchingUp) {
+            updateMarketControls();
+            renderTables();
+        }
+        return;
+    }
     // Re-evaluate each interval during catch-up: a backlog can span news phases.
     batchingTicks = now - lastTickWallTime >= nextTickDuration() * 2;
     let count = 0;
     try {
-        while ((flush || count < 2400) && now - lastTickWallTime >= nextTickDuration()) {
+        while (count < 2400 && now - lastTickWallTime >= nextTickDuration()) {
             generateMarketTick();
             lastTickWallTime += TICK_INTERVAL_MS;
             count++;
@@ -738,19 +764,20 @@ function syncMarketClock(flush = false) {
     } finally {
         const needsRefresh = batchingTicks;
         batchingTicks = false;
+        // Always yield between large batches, including when Pause was clicked.
+        if (now - lastTickWallTime >= nextTickDuration()) {
+            catchUpTimer = setTimeout(() => {
+                catchUpTimer = null;
+                syncMarketClock();
+            }, 0);
+        }
         if (needsRefresh) {
-            candleSeries.setData(data);
+            refreshChartSeries();
             updatePriceDisplay();
             renderNews(marketSeconds);
             if (typeof eaRender === 'function') eaRender(true);
         }
-    }
-    // Large backlogs yield between batches so the page stays responsive.
-    if (now - lastTickWallTime >= nextTickDuration() && catchUpTimer === null) {
-        catchUpTimer = setTimeout(() => {
-            catchUpTimer = null;
-            syncMarketClock();
-        }, 0);
+        updateMarketControls();
     }
 }
 
@@ -836,6 +863,7 @@ function generateCandle() {
 // Manual moves share the active candle and do not advance its clock.
 function applyManualMove(direction) {
   if (!marketInterval) return notifyTrading('Market is paused. Start the market to use Pump or Dump.');
+  if (guardPendingMarketClock()) return;
   const raw = document.getElementById('priceInput').value;
   const value = Number(raw);
   if (!Number.isFinite(value) || raw.trim() === '') return notifyTrading('Enter a valid number for the manual price move.');
@@ -892,7 +920,9 @@ function generateMomentumCandle() {
 // Start/Stop live market
 function toggleMarket() {
   if (marketInterval) {
-    syncMarketClock(true);
+    if (guardPendingMarketClock()) return;
+    syncMarketClock();
+    if (guardPendingMarketClock()) return;
 
     marketInterval = null;
     stopTickEngine();
@@ -918,15 +948,17 @@ function toggleMarket() {
 }
 
 function updateMarketControls() {
+  const catchingUp = isMarketCatchingUp();
   for (const id of ['pumpBtn', 'dumpBtn']) {
     const control = document.getElementById(id);
-    if (control) control.disabled = !marketInterval;
+    if (control) control.disabled = !marketInterval || catchingUp;
   }
   const button = document.getElementById('marketToggle');
+  if (button) button.disabled = catchingUp;
   updateLiveText(button, marketInterval ? 'Ⅱ Pause market' : '▶ Start market');
   const status = document.getElementById('marketStatus');
   if (status) {
-    updateLiveText(status, marketInterval ? '● Market running' : '● Paused');
+    updateLiveText(status, catchingUp ? '● Catching up…' : marketInterval ? '● Market running' : '● Paused');
     status.className = marketInterval ? 'statusBadge running' : 'statusBadge';
   }
   const countdown = document.getElementById('candleCountdown');
