@@ -107,10 +107,22 @@
     if(c.sizing==='risk'&&['equity','cash'].includes(c.slMode))return 'Risk-based lots need a price, ATR or swing stop. For an equity/dollar stop, choose fixed lots.';
     return null;
   }
-  function state(equity) {return {peak:Math.max(0,equity),drawdown:0,maxDD:0,losses:0,halted:'',lastEntry:-Infinity,lastBar:null,newsKey:null,newsRef:null,newsBars:0,lastRelease:null,seen:new Set()};}
+  function newsState() {return {newsKey:null,newsRef:null,newsBars:0,lastRelease:null,lastObservedBar:null};}
+  function state(equity) {return {peak:Math.max(0,equity),drawdown:0,maxDD:0,losses:0,halted:'',lastEntry:-Infinity,lastBar:null,...newsState(),seen:new Set()};}
+  function observeNews(s,news) {
+    if(news.active&&s.newsKey!==news.key){s.newsKey=news.key;s.newsRef=null;s.newsBars=0;s.lastRelease=news.start;}
+  }
   function observe(s,a,news) {
     s.peak=Math.max(s.peak,a.equity);s.drawdown=s.peak>0?Math.max(0,(s.peak-a.equity)/s.peak*100):0;s.maxDD=Math.max(s.maxDD,s.drawdown);
-    if(news.active&&s.newsKey!==news.key){s.newsKey=news.key;s.newsRef=null;s.newsBars=0;s.lastRelease=news.start;}
+    observeNews(s,news);
+  }
+  // Public market observation continues while entry automation is switched off.
+  // Keep its duplicate guard separate from the last entry-decision candle.
+  function observeCandle(s,b,news,now) {
+    observeNews(s,news);
+    if(!b||s.lastObservedBar===b.time)return;
+    s.lastObservedBar=b.time;
+    if(s.lastRelease!==null&&now>=s.lastRelease+2){s.newsBars++;if(news.active&&!s.newsRef)s.newsRef={...b};}
   }
   function closed(s,p) {if(p.source!=='ea'||s.seen.has(p.id))return;s.seen.add(p.id);s.losses=p.profit<0?s.losses+1:0;}
   function risk(s,c,a) {
@@ -172,8 +184,8 @@
       trailing:c.trailing,breakEven:c.breakEven,equityAtEntry:account.equity};
   }
   function decide(s,c,bars,news,now,price,account,open) {
+    observeCandle(s,bars.at(-1),news,now);
     const b=bars.at(-1);if(!b||s.lastBar===b.time)return {error:'Waiting for the next candle.'};s.lastBar=b.time;
-    if(s.lastRelease!==null&&now>=s.lastRelease+2){s.newsBars++;if(news.active&&!s.newsRef)s.newsRef={...b};}
     if(s.halted)return {error:s.halted};
     if(news.active&&!c.tradeNews)return {error:'News trading is off.'};
     if(news.nextFixed!==null&&news.nextFixed>now&&news.nextFixed-now<=c.avoidSeconds)return {error:'Waiting through the scheduled-news window.'};
@@ -205,13 +217,13 @@
     function close(p,price){if(!p.open)return;p.exitMid=price;p.profit=(exitPrice(price,p.type)-p.entry)*(p.type==='BUY'?1:-1)*p.size;p.open=false;balance+=p.profit;net+=p.profit;if(p.profit>0)wins++;else if(p.profit<0)losses++;closed(s,p);}
     for(let i=0;i<to;i++){
       const f=record.ticks[i];
-      if(i<from){observe(s,account(),f.news);if(f.bar){bars.push(f.bar);bars=bars.slice(-500);if(s.lastRelease!==null&&f.time>=s.lastRelease+2){s.newsBars++;if(f.news.active&&!s.newsRef)s.newsRef={...f.bar};}}continue;}
+      if(i<from){observe(s,account(),f.news);if(f.bar){bars.push(f.bar);bars=bars.slice(-500);observeCandle(s,f.bar,f.news,f.time);}continue;}
       for(const p of orders.filter(p=>p.open)){const exit=exitPrice(f.price,p.type),d=p.type==='BUY'?1:-1;p.profit=(exit-p.entry)*d*p.size;if(d*(exit-p.sl)<=0||d*(exit-p.tp)>=0)close(p,f.price);}
       // Account liquidation remains active after an EA loss-streak pause.
       if(account().equity<=0)orders.filter(p=>p.open).forEach(p=>close(p,f.price));
       observe(s,account(),f.news);const stopped=risk(s,c,account());if(stopped){reason=stopped.reason;if(stopped.close)orders.filter(p=>p.open).forEach(p=>close(p,f.price));}
       if(!s.halted)for(const p of orders.filter(p=>p.open))p.sl=trailingStop(p,f.price);
-      if(f.bar){bars.push(f.bar);bars=bars.slice(-500);if(!s.halted){const p=decide(s,c,bars,f.news,f.time,f.price,account(),orders.filter(p=>p.open));if(!p.error){orders.push({...p,id:++id,open:true,source:'ea',profit:-p.openingLoss});costs+=p.openingLoss;s.lastEntry=f.time;}}}
+      if(f.bar){bars.push(f.bar);bars=bars.slice(-500);observeCandle(s,f.bar,f.news,f.time);if(!s.halted){const p=decide(s,c,bars,f.news,f.time,f.price,account(),orders.filter(p=>p.open));if(!p.error){orders.push({...p,id:++id,open:true,source:'ea',profit:-p.openingLoss});costs+=p.openingLoss;s.lastEntry=f.time;}}}
       observe(s,account(),f.news);
       if(f.bar)curve.push({time:f.time,equity:account().equity});
     }
@@ -224,7 +236,7 @@
   function workerScript() {
     return '('+installEACore.toString()+')(self);self.onmessage = function(event) { try { const {tape,config,from,to}=event.data;self.postMessage({result:self.EACore.replay(tape,config,from,to)}); } catch(error) { self.postMessage({error:error.message}); } };';
   }
-  const api={strategies,defaults,validate,state,observe,closed,risk,signals,plan,decide,trailingStop,spread,exitPrice,replay,atr,workerScript,keyLevels,supportResistanceSignal};
+  const api={strategies,defaults,validate,newsState,state,observeNews,observe,observeCandle,closed,risk,signals,plan,decide,trailingStop,spread,exitPrice,replay,atr,workerScript,keyLevels,supportResistanceSignal};
   if(typeof module==='object'&&module.exports)module.exports=api;
   root.EACore=api;
 })(typeof globalThis==='object'?globalThis:this);
