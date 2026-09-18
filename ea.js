@@ -1,6 +1,6 @@
 'use strict';
 const ea = {config:{...EACore.defaults,strategies:[...EACore.defaults.strategies]}, enabled:false,
-  state:null, logs:[], lastStatus:'EA is off.', lastRender:-Infinity, recording:false, tape:null, results:[], worker:null};
+  state:null, newsState:EACore.newsState(), lastNewsTime:-Infinity, logs:[], lastStatus:'EA is off.', lastRender:-Infinity, recording:false, tape:null, results:[], worker:null};
 const eaField = id => document.getElementById('ea'+id);
 const eaOpen = () => positions.filter(p=>p.open&&p.source==='ea');
 function eaPublicNews() {
@@ -8,6 +8,12 @@ function eaPublicNews() {
   const next=NEWS_CONFIG.fixed.enabled?Object.values(nextFixedNewsTimes).filter(t=>t>marketSeconds):[];
   return {active:Boolean(event),key:event?event.id+':'+event.startTime:null,start:event?event.startTime:null,
     nextFixed:next.length?Math.min(...next):null};
+}
+function eaObservePublicNews(news) {
+  // A market reset rewinds the simulation clock; a balance/risk reset does not.
+  if(marketSeconds<ea.lastNewsTime)ea.newsState=EACore.newsState();
+  ea.lastNewsTime=marketSeconds;
+  EACore.observeNews(ea.newsState,news);
 }
 function eaLog(message) {
   if(ea.logs.at(-1)?.message===message)return;
@@ -52,6 +58,7 @@ function eaNewsChange() {
   eaSelectionUI();
 }
 function eaApplySettings() {
+  if(guardPendingMarketClock())return false;
   const c=eaReadConfig(),error=EACore.validate(c);if(error){notifyTrading(error);return false;}
   ea.config=c;try{localStorage.setItem('frx-ea-settings-v1',JSON.stringify(c));}catch{}
   eaLog('Settings applied. Existing trade sizes and exits are unchanged.');
@@ -59,22 +66,25 @@ function eaApplySettings() {
   eaRender(true);return true;
 }
 function eaToggle() {
+  if(guardPendingMarketClock()){eaField('Enabled').checked=ea.enabled;return;}
   const on=eaField('Enabled').checked;
   if(!on){ea.enabled=false;eaSetStatus('EA is off. Existing TP/SL orders remain active.',true);eaRender(true);return;}
   if(!isMarketOpen()){eaField('Enabled').checked=false;notifyTrading('Start the market before enabling the EA.');return;}
   if(ea.state?.halted){eaField('Enabled').checked=false;notifyTrading('Close EA positions and start a new EA risk session before restarting.');return;}
   if(!eaApplySettings()){eaField('Enabled').checked=false;return;}
-  if(!ea.state)ea.state=EACore.state(accountSnapshot().equity);
+  if(!ea.state)ea.state={...EACore.state(accountSnapshot().equity),...ea.newsState};
   ea.state.lastBar=(currentCandle?data.at(-2):data.at(-1))?.time;
   ea.enabled=true;eaSetStatus('EA is on. Waiting for a completed candle.',true);eaRender(true);
 }
 function eaNewSession() {
+  if(guardPendingMarketClock())return;
   if(!isMarketOpen())return notifyTrading('Start the market before resetting EA risk tracking.');
   if(eaOpen().length)return notifyTrading('Close EA positions before starting a new risk session.');
-  ea.enabled=false;eaField('Enabled').checked=false;ea.state=EACore.state(accountSnapshot().equity);
+  ea.enabled=false;eaField('Enabled').checked=false;ea.state={...EACore.state(accountSnapshot().equity),...ea.newsState};
   eaSetStatus('New risk session ready. Switch EA on to trade.',true);eaRender(true);
 }
 function eaClosePositions() {
+  if(guardPendingMarketClock())return;
   if(!isMarketOpen())return notifyTrading('Start the market before closing EA trades.');
   ea.enabled=false;eaField('Enabled').checked=false;
   for(const p of eaOpen())closeTrade(p.id,true);
@@ -86,17 +96,19 @@ function eaOnTradeClosed(p) {
 }
 function eaOnAccountReset() {
   ea.enabled=false;eaField('Enabled').checked=false;ea.state=null;
+  eaObservePublicNews(eaPublicNews());
   if(ea.recording){ea.recording=false;eaLog('Recording stopped because the account was reset.');}
   eaSetStatus('Account reset. EA is off.');eaRender(true);
 }
 function eaPriceTick() {
   if(!isMarketOpen())return;
   const news=eaPublicNews(),account=accountSnapshot();
+  eaObservePublicNews(news);
   if(ea.recording){
     if(ea.tape.ticks.length>=100000){ea.recording=false;eaLog('Recording reached 100,000 ticks and was stopped. Save it before starting another.');}
     else ea.tape.ticks.push({time:marketSeconds,price:currentTickPrice,news,bar:null});
   }
-  if(ea.state)EACore.observe(ea.state,account,news);
+  if(ea.state){Object.assign(ea.state,ea.newsState);EACore.observe(ea.state,account,news);}
   if(ea.enabled&&ea.state){
     const stopped=EACore.risk(ea.state,ea.config,account);
     if(stopped){
@@ -114,8 +126,12 @@ function eaPriceTick() {
 }
 function eaCandleClosed(candle) {
   if(ea.recording&&ea.tape.ticks.length)ea.tape.ticks.at(-1).bar={...candle};
+  const news=eaPublicNews();
+  eaObservePublicNews(news);
+  EACore.observeCandle(ea.newsState,candle,news,marketSeconds);
+  if(ea.state)Object.assign(ea.state,ea.newsState);
   if(!ea.enabled||!isMarketOpen()||!ea.state)return;
-  const decision=EACore.decide(ea.state,ea.config,data,eaPublicNews(),marketSeconds,currentTickPrice,accountSnapshot(),positions.filter(p=>p.open));
+  const decision=EACore.decide(ea.state,ea.config,data,news,marketSeconds,currentTickPrice,accountSnapshot(),positions.filter(p=>p.open));
   if(decision.error){eaSetStatus(decision.error);if(!decision.error.startsWith('Waiting'))eaLog('Skipped: '+decision.error);}
   else {
     const p=placeOrder(decision.type,{...decision,source:'ea'});
@@ -138,6 +154,7 @@ function eaRender(force=false) {
   updateLiveText(eaField('Preview'),buy.error?'Buy estimate: '+buy.error:'Buy estimate · '+buy.lots.toFixed(2)+' lots · planned loss $'+buy.risk.toFixed(2)+' · margin $'+buy.margin.toFixed(2));
 }
 function eaRecord() {
+  if(guardPendingMarketClock())return;
   if(ea.recording){ea.recording=false;eaLog('Recording stopped.');eaRender(true);return;}
   if(!isMarketOpen())return notifyTrading('Start the market before recording.');
   if(accountSnapshot().equity<=0)return notifyTrading('Reset the account to positive equity before starting a recording.');
