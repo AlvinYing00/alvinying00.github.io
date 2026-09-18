@@ -80,8 +80,17 @@ function isMarketOpen() {
     return marketOpen;
 }
 
+// User actions must use a current quote. Automated orders and protective exits
+// still run on each historical tick while the clock catches up.
+function guardPendingMarketClock() {
+    if (typeof isMarketCatchingUp !== 'function' || !isMarketCatchingUp()) return false;
+    notifyTrading('Market is catching up. Please wait for the current quote before making changes.');
+    return true;
+}
+
 function resetAccountBalance() {
     if (!isMarketOpen()) return notifyTrading('Start the market before resetting your balance.');
+    if (guardPendingMarketClock()) return;
     if (positions.some(trade => trade.open)) return notifyTrading('Close all open trades before resetting your balance.');
     balance = volatilityConfig[currentVolatility].balance;
     if (typeof eaOnAccountReset === 'function') eaOnAccountReset();
@@ -123,6 +132,7 @@ function placeSell() {
 
 function placeOrder(type, automation = null) {
     if (!isMarketOpen()) return notifyTrading('Start the market before placing a trade.');
+    if (!automation && guardPendingMarketClock()) return;
     if (!['BUY','SELL'].includes(type)) return;
     if (automation && (automation.source !== 'ea' || typeof ea === 'undefined' || !ea.enabled || ea.state?.halted)) return;
     if (!data || data.length < 1) return notifyTrading("No market data available.");
@@ -179,6 +189,7 @@ let exitPriceEditor = null;
 
 function openExitPriceEditor(id, kind) {
     if (!isMarketOpen()) return notifyTrading('Market is paused. Start the market to manage trades.');
+    if (guardPendingMarketClock()) return;
     const trade = positions.find(t => t.id === id && t.open);
     if (!trade) return;
 
@@ -198,6 +209,7 @@ function closeExitPriceEditor() {
 function saveExitPrice() {
     if (!exitPriceEditor) return;
     if (!isMarketOpen()) return notifyTrading('Market is paused. Start the market to manage trades.');
+    if (guardPendingMarketClock()) return;
     const {id, kind} = exitPriceEditor;
     const trade = positions.find(t => t.id === id && t.open);
     if (!trade) {
@@ -207,6 +219,13 @@ function saveExitPrice() {
     const raw = document.getElementById('exitPriceInput').value.trim();
     const value = Number(raw);
     if (!raw || !Number.isFinite(value) || value < 0.01) return notifyTrading('Enter a valid price of at least 0.01.');
+    const price = typeof currentTickPrice === 'number' ? currentTickPrice : data.at(-1)?.close;
+    if (!Number.isFinite(price)) return notifyTrading('Wait for a valid market quote before setting an exit.');
+    const exit = Math.max(0.01, price + (trade.type === 'BUY' ? -1 : 1) * getSpread(price));
+    const above = (kind === 'tp') === (trade.type === 'BUY');
+    if (above ? value <= exit : value >= exit) {
+        return notifyTrading(`${kind === 'tp' ? 'Take profit' : 'Stop loss'} must be ${above ? 'above' : 'below'} the current exit price ($${exit.toFixed(2)}).`);
+    }
     trade[kind] = value;
     if (kind === 'tp') createOrUpdateTPLine(trade);
     else createOrUpdateSLLine(trade);
@@ -219,6 +238,7 @@ function setSL(id) { openExitPriceEditor(id, 'sl'); }
 // ---- Close Trade ----
 function closeTrade(id, automatic = false) {
     if (!automatic && !isMarketOpen()) return notifyTrading('Market is paused. Start the market to close trades.');
+    if (!automatic && guardPendingMarketClock()) return;
     const trade = positions.find(t => t.id === id && t.open);
     if (!trade) return;
 
@@ -297,6 +317,7 @@ function forceCloseAll() {
 // ---- Manual Close All ----
 function closeAllTrades() {
     if (!isMarketOpen()) return notifyTrading('Market is paused. Start the market to close trades.');
+    if (guardPendingMarketClock()) return;
     if (!data || data.length === 0) return;
 
     const lastPrice =
@@ -424,8 +445,9 @@ function updateLiveText(element, value) {
 function renderTables() {
     if (!data || data.length < 1) return;
 
-    document.getElementById("buyBtn").disabled = !marketOpen;
-    document.getElementById("sellBtn").disabled = !marketOpen;
+    const canManage = marketOpen && (typeof isMarketCatchingUp !== 'function' || !isMarketCatchingUp());
+    document.getElementById("buyBtn").disabled = !canManage;
+    document.getElementById("sellBtn").disabled = !canManage;
 
     const floatingPL = positions
         .filter(p => p.open)
@@ -465,12 +487,12 @@ function renderTables() {
     // ---- Keep Close All visible; enable it when there are open trades ----
     const closeAllBtn = document.getElementById("closeAllBtn");
     if (closeAllBtn) {
-        closeAllBtn.disabled = !hasOpenTrades || !marketOpen;
+        closeAllBtn.disabled = !hasOpenTrades || !canManage;
     }
 
     // Open Trades
     const openTrades = positions.filter(p => p.open);
-    const openSignature = JSON.stringify([marketOpen, openTrades.map(p => [p.id, p.type, p.entry])]);
+    const openSignature = JSON.stringify([canManage, openTrades.map(p => [p.id, p.type, p.entry])]);
     if (openTable.tradeSignature !== openSignature) {
       openTable.tradeSignature = openSignature;
       openTable.tradeRows = new Map();
@@ -485,9 +507,9 @@ function renderTables() {
             <td>${data[data.length - 1].close.toFixed(2)}</td>
             <td class="${profitClass}">${trade.profit.toFixed(2)}</td>
             <td>
-                <button onclick="setTP(${trade.id})" ${marketOpen ? '' : 'disabled'}>TP</button>
-                <button onclick="setSL(${trade.id})" ${marketOpen ? '' : 'disabled'}>SL</button>
-                <button onclick="closeTrade(${trade.id})" ${marketOpen ? '' : 'disabled'}>Close</button>
+                <button onclick="setTP(${trade.id})" ${canManage ? '' : 'disabled'}>TP</button>
+                <button onclick="setSL(${trade.id})" ${canManage ? '' : 'disabled'}>SL</button>
+                <button onclick="closeTrade(${trade.id})" ${canManage ? '' : 'disabled'}>Close</button>
             </td>`;
         openTable.appendChild(row);
         openTable.tradeRows.set(trade.id, row);
